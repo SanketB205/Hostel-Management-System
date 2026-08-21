@@ -8,10 +8,12 @@ import {
   Grid,
   Stack,
   Switch,
+  Tooltip,
   Typography,
   useTheme,
 } from '@mui/material';
 import {
+  BadgeCheck,
   Clock3,
   Globe2,
   KeyRound,
@@ -20,6 +22,7 @@ import {
   Mail,
   Monitor,
   Moon,
+  Phone,
   ShieldCheck,
   Smartphone,
   Sun,
@@ -27,6 +30,7 @@ import {
   UsersRound,
 } from 'lucide-react';
 import { ColorModeContext } from '../contexts/ThemeContext';
+import { useAuth } from '../contexts/AuthContext';
 import ProfileAvatar from '../components/ProfileAvatar';
 
 const cardSx = { p: 3, borderRadius: '16px' };
@@ -36,13 +40,6 @@ const notifications = [
   ['Complaint Alerts', 'Get notified when a new complaint is submitted.'],
   ['Fee Payment Alerts', 'Receive alerts for successful and pending fee payments.'],
   ['Attendance Alerts', 'Get notified about attendance updates and exceptions.'],
-];
-
-const sessionDetails = [
-  { title: 'IP Address', value: '192.xxx.xxx.xxx', icon: LocateFixed, color: '#4F46E5', bg: 'rgba(79, 70, 229, 0.1)' },
-  { title: 'Browser', value: 'Google Chrome', icon: Globe2, color: '#2563EB', bg: 'rgba(37, 99, 235, 0.1)' },
-  { title: 'Device', value: 'Windows 11 Desktop', icon: Laptop, color: '#8B5CF6', bg: 'rgba(139, 92, 246, 0.1)' },
-  { title: 'Last Active', value: 'Just Now', icon: Clock3, color: '#22C55E', bg: 'rgba(34, 197, 94, 0.1)' },
 ];
 
 function SectionHeader({ title, subtitle }) {
@@ -72,9 +69,37 @@ function SettingRow({ title, description, children, divider = true }) {
 export default function SettingsPage() {
   const theme = useTheme();
   const colorMode = useContext(ColorModeContext);
+  const { user } = useAuth();
   const [twoFactor, setTwoFactor] = useState(false);
   const [alertSettings, setAlertSettings] = useState({ email: true, complaints: true, fees: false, attendance: true });
   const isDark = theme.palette.mode === 'dark';
+
+  // Derive display values from the logged-in user
+  const displayName = user?.name || user?.email?.split('@')[0] || 'User';
+  const displayEmail = user?.email || '—';
+  const displayPhone = user?.phone || null;
+  const displayUsername = user?.username || null;
+  const displayRole = user?.role
+    ? user.role.charAt(0).toUpperCase() + user.role.slice(1)
+    : '—';
+  const displayDesignation = user?.designation || null;
+
+  const roleColor = { admin: 'error', rector: 'primary', student: 'success' }[user?.role] || 'default';
+  const roleLabel = { admin: 'Admin', rector: 'Rector', student: 'Student' }[user?.role] || displayRole;
+
+  const lastLogin = user?.lastLoginAt
+    ? new Date(user.lastLoginAt).toLocaleString('en-IN', {
+        day: '2-digit', month: 'short', year: 'numeric',
+        hour: '2-digit', minute: '2-digit',
+      })
+    : null;
+
+  const sessionDetails = [
+    { title: 'IP Address', value: '192.xxx.xxx.xxx', icon: LocateFixed, color: '#4F46E5', bg: 'rgba(79, 70, 229, 0.1)' },
+    { title: 'Browser', value: 'Google Chrome', icon: Globe2, color: '#2563EB', bg: 'rgba(37, 99, 235, 0.1)' },
+    { title: 'Device', value: 'Windows 11 Desktop', icon: Laptop, color: '#8B5CF6', bg: 'rgba(139, 92, 246, 0.1)' },
+    { title: 'Last Active', value: lastLogin || 'Just Now', icon: Clock3, color: '#22C55E', bg: 'rgba(34, 197, 94, 0.1)' },
+  ];
 
   return (
     <Box sx={{ animation: 'fadeIn 0.5s ease-out', pb: 4, width: '100%' }}>
@@ -92,10 +117,51 @@ export default function SettingsPage() {
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 2.25 }}>
                 <ProfileAvatar size={64} />
                 <Box>
-                  <Typography variant="h6" sx={{ fontWeight: 700 }}>Admin User</Typography>
-                  <Typography variant="body2" color="text.secondary" sx={{ mt: 0.35 }}>admin@hostelspace.com</Typography>
-                  <Typography variant="body2" color="text.secondary" sx={{ mt: 0.15 }}>+91 98765 43210</Typography>
-                  <Chip label="Super Admin" size="small" color="primary" variant="outlined" sx={{ mt: 1.15, fontWeight: 600 }} />
+                  <Typography variant="h6" sx={{ fontWeight: 700 }}>{displayName}</Typography>
+
+                  {/* Email */}
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, mt: 0.5 }}>
+                    <Mail size={13} color={theme.palette.text.secondary} />
+                    <Typography variant="body2" color="text.secondary">{displayEmail}</Typography>
+                  </Box>
+
+                  {/* Phone (only if available) */}
+                  {displayPhone && (
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, mt: 0.35 }}>
+                      <Phone size={13} color={theme.palette.text.secondary} />
+                      <Typography variant="body2" color="text.secondary">{displayPhone}</Typography>
+                    </Box>
+                  )}
+
+                  {/* Username / ID (only if available) */}
+                  {displayUsername && (
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, mt: 0.35 }}>
+                      <BadgeCheck size={13} color={theme.palette.text.secondary} />
+                      <Typography variant="body2" color="text.secondary">{displayUsername}</Typography>
+                    </Box>
+                  )}
+
+                  {/* Designation (staff only) */}
+                  {displayDesignation && (
+                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.25 }}>
+                      {displayDesignation}
+                    </Typography>
+                  )}
+
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 1.15, flexWrap: 'wrap' }}>
+                    <Chip label={roleLabel} size="small" color={roleColor} variant="outlined" sx={{ fontWeight: 600 }} />
+                    {lastLogin && (
+                      <Tooltip title={`Last login: ${lastLogin}`} placement="right">
+                        <Chip
+                          icon={<Clock3 size={12} />}
+                          label={`Last login: ${lastLogin}`}
+                          size="small"
+                          variant="outlined"
+                          sx={{ fontWeight: 500, fontSize: '0.68rem' }}
+                        />
+                      </Tooltip>
+                    )}
+                  </Box>
                 </Box>
               </Box>
               <Button variant="contained" startIcon={<UserRound size={18} />}>Edit Profile</Button>

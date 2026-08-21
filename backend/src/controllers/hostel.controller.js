@@ -1,6 +1,7 @@
-import { BedAllocation, Floor, HostelBlock, Room, Student } from '../models/index.js';
+import { BedAllocation, Floor, HostelBlock, Room, Student, Staff, Complaint, User } from '../models/index.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { sequelize } from '../config/database.js';
+import { Op } from 'sequelize';
 
 // ── helpers ─────────────────────────────────────────────────────────────────
 
@@ -244,4 +245,120 @@ export const getRoomStudents = asyncHandler(async (req, res) => {
   });
 
   res.json({ data: students });
+});
+
+// ── delete room ──────────────────────────────────────────────────────────────
+
+export const deleteRoom = asyncHandler(async (req, res) => {
+  const room = await Room.findByPk(req.params.roomId);
+  if (!room) return res.status(404).json({ message: 'Room not found.' });
+
+  // Check if room has active student allocations
+  const activeAllocCount = await BedAllocation.count({
+    where: { roomId: room.id, status: 'active' }
+  });
+
+  if (activeAllocCount > 0) {
+    return res.status(400).json({ message: 'Cannot Delete Room. This room currently has students allocated. Transfer all students before deleting this room.' });
+  }
+
+  await sequelize.transaction(async (transaction) => {
+    // Delete non-active allocations for this room
+    await BedAllocation.destroy({ where: { roomId: room.id }, transaction });
+    // Delete the room
+    await room.destroy({ transaction });
+  });
+
+  res.json({ message: `Room ${room.number} deleted successfully.` });
+});
+
+// ── dashboard stats ──────────────────────────────────────────────────────────
+
+export const getDashboardStats = asyncHandler(async (req, res) => {
+  // 1. Total counts
+  const totalStudents = await Student.count({
+    include: [{
+      model: User,
+      as: 'user',
+      where: { role: 'student' }
+    }]
+  });
+  const totalStaff = await Staff.count();
+  const pendingComplaints = await Complaint.count({
+    where: {
+      status: { [Op.in]: ['Pending', 'In Progress'] }
+    }
+  });
+
+  // 2. Room Status counts
+  const rooms = await Room.findAll({
+    include: [{
+      model: BedAllocation,
+      as: 'allocations',
+      where: { status: 'active' },
+      required: false
+    }]
+  });
+
+  let occupiedRooms = 0;
+  let availableRooms = 0;
+  let maintenanceRooms = 0;
+
+  rooms.forEach(r => {
+    const bedsOccupied = r.allocations?.length || 0;
+    if (r.status === 'Maintenance') {
+      maintenanceRooms++;
+    } else if (bedsOccupied === 0) {
+      availableRooms++;
+    } else {
+      occupiedRooms++;
+    }
+  });
+
+  // 3. Monthly revenue calculation based on active bed allocations
+  const currentYear = new Date().getFullYear();
+  const monthlyRevenue = [];
+  const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  
+  for (let m = 0; m < 12; m++) {
+    const startOfMonth = new Date(currentYear, m, 1);
+    const endOfMonth = new Date(currentYear, m + 1, 0); // last day of month
+    
+    const startStr = startOfMonth.toISOString().slice(0, 10);
+    const endStr = endOfMonth.toISOString().slice(0, 10);
+
+    const activeCount = await BedAllocation.count({
+      where: {
+        allocatedAt: { [Op.lte]: endStr },
+        [Op.or]: [
+          { vacatedAt: null },
+          { vacatedAt: { [Op.gte]: startStr } }
+        ]
+      }
+    });
+
+    monthlyRevenue.push({
+      name: monthNames[m],
+      value: activeCount * 2000 // Each active allocation pays 2000 per month
+    });
+  }
+
+  res.json({
+    data: {
+      stats: {
+        totalStudents,
+        totalStaff,
+        pendingComplaints,
+        occupiedRooms,
+        availableRooms,
+        maintenanceRooms
+      },
+      roomStatusChart: [
+        { name: 'Occupied', value: occupiedRooms, color: '#F59E0B' },
+        { name: 'Available', value: availableRooms, color: '#22C55E' },
+        { name: 'Maintenance', value: maintenanceRooms, color: '#EF4444' }
+      ],
+      revenueChart: monthlyRevenue
+    }
+  });
 });

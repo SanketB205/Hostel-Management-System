@@ -1,6 +1,8 @@
-import React from 'react';
-import { Box, Card, Typography, Grid } from '@mui/material';
+import React, { useState, useEffect } from 'react';
+import { Box, Card, Typography } from '@mui/material';
 import { Users, Bed, CheckCircle, Clock, UserCheck, TrendingUp, TrendingDown } from 'lucide-react';
+import { useAuth } from '../contexts/AuthContext';
+import { complaints } from '../api';
 
 const STATS = [
   {
@@ -51,6 +53,28 @@ const STATS = [
 ];
 
 export default function StatCards() {
+  const { user } = useAuth();
+  const [pendingComplaints, setPendingComplaints] = useState(5);
+
+  useEffect(() => {
+    if (!user) return;
+    const fetchCount = async () => {
+      try {
+        let count = 0;
+        if (user.role === 'student') {
+          const res = await complaints.listMine();
+          count = (res.data || []).filter(c => c.status === 'Pending' || c.status === 'In Progress').length;
+        } else {
+          const res = await complaints.listAll();
+          count = (res.data || []).filter(c => c.status === 'Pending' || c.status === 'In Progress').length;
+        }
+        setPendingComplaints(count);
+      } catch (err) {
+        console.error('Failed to fetch pending complaints for dashboard:', err);
+      }
+    };
+    fetchCount();
+  }, [user]);
   return (
     <Box 
       sx={{ 
@@ -62,6 +86,7 @@ export default function StatCards() {
     >
       {STATS.map((stat, idx) => {
         const Icon = stat.icon;
+        const displayValue = stat.title === 'Pending Complaints' ? pendingComplaints : stat.value;
         return (
           <Card 
             key={idx}
@@ -111,7 +136,7 @@ export default function StatCards() {
               </Box>
             </Box>
             <Typography variant="h4" sx={{ fontWeight: 700, mb: 0.5, color: 'text.primary' }}>
-              {stat.value}
+              {displayValue}
             </Typography>
             <Typography variant="body2" sx={{ color: 'text.secondary', fontWeight: 500 }}>
               {stat.title}

@@ -1,4 +1,3 @@
-import React from 'react';
 import { 
   Box, 
   Card, 
@@ -12,7 +11,7 @@ import {
 } from '@mui/material';
 import { Search, RotateCcw, Plus } from 'lucide-react';
 
-export default function ComplaintFilters({ filters, setFilters, onReset, onAddClick }) {
+export default function ComplaintFilters({ filters, setFilters, onReset, onAddClick, showRoleFilter }) {
   const theme = useTheme();
 
   const handleFilterChange = (field) => (event) => {
@@ -121,6 +120,21 @@ export default function ComplaintFilters({ filters, setFilters, onReset, onAddCl
               <MenuItem value="Block C">Block C</MenuItem>
             </Select>
           </FormControl>
+          
+          {showRoleFilter && (
+            <FormControl size="small" sx={{ minWidth: 130 }}>
+              <InputLabel>Created By</InputLabel>
+              <Select
+                value={filters.creatorRole}
+                label="Created By"
+                onChange={handleFilterChange('creatorRole')}
+              >
+                <MenuItem value="All">All Roles</MenuItem>
+                <MenuItem value="student">Student</MenuItem>
+                <MenuItem value="rector">Rector</MenuItem>
+              </Select>
+            </FormControl>
+          )}
 
           <Button 
             variant="outlined" 
@@ -131,17 +145,19 @@ export default function ComplaintFilters({ filters, setFilters, onReset, onAddCl
             Reset
           </Button>
 
-          <Button 
-            variant="contained" 
-            startIcon={<Plus size={18} />}
-            onClick={onAddClick}
-            sx={{ 
-              backgroundColor: '#4F46E5',
-              '&:hover': { backgroundColor: '#4338CA' }
-            }}
-          >
-            Add Complaint
-          </Button>
+          {onAddClick && (
+            <Button 
+              variant="contained" 
+              startIcon={<Plus size={18} />}
+              onClick={onAddClick}
+              sx={{ 
+                backgroundColor: '#4F46E5',
+                '&:hover': { backgroundColor: '#4338CA' }
+              }}
+            >
+              Add Complaint
+            </Button>
+          )}
         </Box>
       </Box>
     </Card>

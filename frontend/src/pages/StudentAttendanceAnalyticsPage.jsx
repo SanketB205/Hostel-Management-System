@@ -62,120 +62,89 @@ const STATUS_COLORS = {
   Pending: { color: '#64748B', bg: 'rgba(100, 116, 139, 0.1)', dot: '❓' }
 };
 
-// Mock data for Line Chart (Trend)
+// Mock data for Line Chart (Trend) initialized to zero/empty
 const WEEKLY_TREND_7D = [
-  { name: 'Mon', Present: 92, Absent: 5, Leave: 3 },
-  { name: 'Tue', Present: 95, Absent: 3, Leave: 2 },
-  { name: 'Wed', Present: 94, Absent: 4, Leave: 2 },
-  { name: 'Thu', Present: 91, Absent: 6, Leave: 3 },
-  { name: 'Fri', Present: 89, Absent: 8, Leave: 3 },
-  { name: 'Sat', Present: 85, Absent: 12, Leave: 3 },
-  { name: 'Sun', Present: 88, Absent: 9, Leave: 3 }
+  { name: 'Mon', Present: 0, Absent: 0, Leave: 0 },
+  { name: 'Tue', Present: 0, Absent: 0, Leave: 0 },
+  { name: 'Wed', Present: 0, Absent: 0, Leave: 0 },
+  { name: 'Thu', Present: 0, Absent: 0, Leave: 0 },
+  { name: 'Fri', Present: 0, Absent: 0, Leave: 0 },
+  { name: 'Sat', Present: 0, Absent: 0, Leave: 0 },
+  { name: 'Sun', Present: 0, Absent: 0, Leave: 0 }
 ];
 
 const WEEKLY_TREND_30D = [
-  { name: 'W1', Present: 91, Absent: 6, Leave: 3 },
-  { name: 'W2', Present: 93, Absent: 4, Leave: 3 },
-  { name: 'W3', Present: 92, Absent: 5, Leave: 3 },
-  { name: 'W4', Present: 94, Absent: 3, Leave: 3 }
+  { name: 'W1', Present: 0, Absent: 0, Leave: 0 },
+  { name: 'W2', Present: 0, Absent: 0, Leave: 0 },
+  { name: 'W3', Present: 0, Absent: 0, Leave: 0 },
+  { name: 'W4', Present: 0, Absent: 0, Leave: 0 }
 ];
 
 const WEEKLY_TREND_MONTH = [
-  { name: '1-5', Present: 93, Absent: 4, Leave: 3 },
-  { name: '6-10', Present: 92, Absent: 5, Leave: 3 },
-  { name: '11-15', Present: 95, Absent: 2, Leave: 3 },
-  { name: '16-20', Present: 90, Absent: 7, Leave: 3 },
-  { name: '21-25', Present: 91, Absent: 6, Leave: 3 },
-  { name: '26-30', Present: 94, Absent: 3, Leave: 3 }
+  { name: '1-5', Present: 0, Absent: 0, Leave: 0 },
+  { name: '6-10', Present: 0, Absent: 0, Leave: 0 },
+  { name: '11-15', Present: 0, Absent: 0, Leave: 0 },
+  { name: '16-20', Present: 0, Absent: 0, Leave: 0 },
+  { name: '21-25', Present: 0, Absent: 0, Leave: 0 },
+  { name: '26-30', Present: 0, Absent: 0, Leave: 0 }
 ];
 
 // Mock data for Doughnut Chart (Distribution)
 const DISTRIBUTION_DATA = [
-  { name: 'Present', value: 245, color: '#16A34A' },
-  { name: 'Absent', value: 15, color: '#DC2626' },
-  { name: 'Leave', value: 12, color: '#2563EB' },
-  { name: 'Late', value: 8, color: '#EA580C' },
-  { name: 'Not Marked', value: 5, color: '#64748B' }
+  { name: 'Present', value: 0, color: '#16A34A' },
+  { name: 'Absent', value: 0, color: '#DC2626' },
+  { name: 'Leave', value: 0, color: '#2563EB' },
+  { name: 'Late', value: 0, color: '#EA580C' },
+  { name: 'Not Marked', value: 0, color: '#64748B' }
 ];
 
 const TOTAL_DISTRIBUTION = DISTRIBUTION_DATA.reduce((acc, c) => acc + c.value, 0);
 
 // Course-wise Attendance Mock Data
-const COURSE_ATTENDANCE = [
-  { course: 'Computer Science (CSE)', present: 112, absent: 8, rate: 93 },
-  { course: 'Electronics (ECE)', present: 54, absent: 6, rate: 90 },
-  { course: 'Mechanical (ME)', present: 42, absent: 8, rate: 84 },
-  { course: 'Civil (CE)', present: 22, absent: 6, rate: 78 },
-  { course: 'Business (BBA)', present: 15, absent: 7, rate: 68 }
-];
+const COURSE_ATTENDANCE = [];
 
 // Year-wise Attendance Mock Data
-const YEAR_ATTENDANCE = [
-  { year: '1st Year', present: 68, absent: 12, rate: 85 },
-  { year: '2nd Year', present: 72, absent: 8, rate: 90 },
-  { year: '3rd Year', present: 64, absent: 6, rate: 91 },
-  { year: '4th Year', present: 41, absent: 9, rate: 82 }
-];
+const YEAR_ATTENDANCE = [];
 
 // Block-wise Attendance Mock Data
-const BLOCK_ATTENDANCE = [
-  { block: 'Block A', present: 95, absent: 5, rate: 95 },
-  { block: 'Block B', present: 88, absent: 12, rate: 88 },
-  { block: 'Block C', present: 62, absent: 18, rate: 77 }
-];
+const BLOCK_ATTENDANCE = [];
 
 // Students Requiring Attention Mock Data
-const NEED_ATTENTION_STUDENTS = [
-  { name: 'Rohit Sharma', issue: 'Attendance Below 75%', rate: 68, status: 'Absent' },
-  { name: 'Priya Verma', issue: '3 Consecutive Absences', rate: 72, status: 'Leave' },
-  { name: 'Amit Singh', issue: 'Frequently Late Entry', rate: 74, status: 'Late' },
-  { name: 'Kunal Sen', issue: 'Attendance Below 75%', rate: 64, status: 'Absent' }
-];
+const NEED_ATTENTION_STUDENTS = [];
 
 // Monthly Attendance Rate (Bar Chart)
 const MONTHLY_RATE_THIS_YEAR = [
-  { name: 'Jan', rate: 92 },
-  { name: 'Feb', rate: 94 },
-  { name: 'Mar', rate: 91 },
-  { name: 'Apr', rate: 93 },
-  { name: 'May', rate: 95 },
-  { name: 'Jun', rate: 89 },
-  { name: 'Jul', rate: 87 },
-  { name: 'Aug', rate: 90 },
-  { name: 'Sep', rate: 92 },
-  { name: 'Oct', rate: 94 },
-  { name: 'Nov', rate: 93 },
-  { name: 'Dec', rate: 95 }
+  { name: 'Jan', rate: 0 },
+  { name: 'Feb', rate: 0 },
+  { name: 'Mar', rate: 0 },
+  { name: 'Apr', rate: 0 },
+  { name: 'May', rate: 0 },
+  { name: 'Jun', rate: 0 },
+  { name: 'Jul', rate: 0 },
+  { name: 'Aug', rate: 0 },
+  { name: 'Sep', rate: 0 },
+  { name: 'Oct', rate: 0 },
+  { name: 'Nov', rate: 0 },
+  { name: 'Dec', rate: 0 }
 ];
 
 const MONTHLY_RATE_LAST_YEAR = [
-  { name: 'Jan', rate: 89 },
-  { name: 'Feb', rate: 91 },
-  { name: 'Mar', rate: 90 },
-  { name: 'Apr', rate: 92 },
-  { name: 'May', rate: 93 },
-  { name: 'Jun', rate: 88 },
-  { name: 'Jul', rate: 85 },
-  { name: 'Aug', rate: 87 },
-  { name: 'Sep', rate: 89 },
-  { name: 'Oct', rate: 91 },
-  { name: 'Nov', rate: 90 },
-  { name: 'Dec', rate: 92 }
+  { name: 'Jan', rate: 0 },
+  { name: 'Feb', rate: 0 },
+  { name: 'Mar', rate: 0 },
+  { name: 'Apr', rate: 0 },
+  { name: 'May', rate: 0 },
+  { name: 'Jun', rate: 0 },
+  { name: 'Jul', rate: 0 },
+  { name: 'Aug', rate: 0 },
+  { name: 'Sep', rate: 0 },
+  { name: 'Oct', rate: 0 },
+  { name: 'Nov', rate: 0 },
+  { name: 'Dec', rate: 0 }
 ];
 
 // Recent Activity Mock Data
-const RECENT_ACTIVITIES = [
-  { time: '09:10 AM', name: 'Sanket Bhujbal', status: 'Present' },
-  { time: '09:22 AM', name: 'Rahul Sharma', status: 'Absent' },
-  { time: '09:40 AM', name: 'Priya Patel', status: 'Late' },
-  { time: '10:02 AM', name: 'Amit Desai', status: 'Present' },
-  { time: '10:15 AM', name: 'Kavya Joshi', status: 'Leave' },
-  { time: '10:30 AM', name: 'Rohan Mehta', status: 'Present' },
-  { time: '11:00 AM', name: 'Neha Verma', status: 'Present' },
-  { time: '11:15 AM', name: 'Vihaan Gupta', status: 'Late' },
-  { time: '11:45 AM', name: 'Aditi Singh', status: 'Absent' },
-  { time: '12:00 PM', name: 'Riya Joshi', status: 'Present' }
-];
+const RECENT_ACTIVITIES = [];
 
 export default function StudentAttendanceAnalyticsPage() {
   const [selectedDate, setSelectedDate] = useState(dayjs());

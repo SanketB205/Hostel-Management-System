@@ -1,6 +1,6 @@
 import bcrypt from 'bcryptjs';
 import { sequelize } from '../config/database.js';
-import { BedAllocation, Floor, HostelBlock, Room, Student, User } from '../models/index.js';
+import { BedAllocation, Floor, HostelBlock, Room, Student, StudentAttendance, User } from '../models/index.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 
 const normalizeRoom = (value) => String(value || '').replace(/^BLOCK\s*/i, '').replace(/[-\s]/g, '').toUpperCase().replace(/^([A-Z])\1(?=\d)/, '$1');
@@ -47,4 +47,14 @@ export const importLocalStorage = asyncHandler(async (req, res) => {
     }
   });
   res.json({ message: 'Local data import completed. LocalStorage was not changed.', data: report });
+});
+
+// ── Demo helper: wipe today's attendance (admin only) ─────────────────────────
+export const clearTodayAttendance = asyncHandler(async (req, res) => {
+  const today = new Date().toISOString().slice(0, 10);
+  const deleted = await StudentAttendance.destroy({ where: { attendanceDate: today } });
+  res.json({
+    message: `Today's attendance cleared. ${deleted} record${deleted !== 1 ? 's' : ''} removed — all students reset to Not Marked.`,
+    data: { date: today, deleted },
+  });
 });

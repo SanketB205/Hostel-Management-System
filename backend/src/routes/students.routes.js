@@ -1,12 +1,15 @@
 import { Router } from 'express';
-import { createStudent, getStudent, listStudents, resetStudentPassword, updateStudentStatus } from '../controllers/students.controller.js';
-import { authenticate } from '../middleware/authenticate.js';
+import { createStudent, getStudent, listStudents, resetStudentPassword, updateStudentStatus, getAttendanceAnalytics, deleteStudent, updateStudent } from '../controllers/students.controller.js';
+import { authenticate, authorize } from '../middleware/authenticate.js';
 
 export const studentsRouter = Router();
 
 studentsRouter.use(authenticate);
+studentsRouter.get('/attendance/analytics', getAttendanceAnalytics);
 studentsRouter.get('/', listStudents);
 studentsRouter.get('/:id', getStudent);
-studentsRouter.post('/', createStudent);
-studentsRouter.patch('/:id/status', updateStudentStatus);
-studentsRouter.post('/:id/reset-password', resetStudentPassword);
+studentsRouter.post('/',              authorize('admin'),         createStudent);
+studentsRouter.put('/:id',             authorize('admin'),         updateStudent);
+studentsRouter.patch('/:id/status',   authorize('admin', 'rector'), updateStudentStatus);
+studentsRouter.post('/:id/reset-password', authorize('admin'),   resetStudentPassword);
+studentsRouter.delete('/:id',         authorize('admin'),         deleteStudent);

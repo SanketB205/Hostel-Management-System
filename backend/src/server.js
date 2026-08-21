@@ -11,8 +11,9 @@ async function startServer() {
     try {
       await sequelize.query("UPDATE users SET role = 'rector' WHERE role = 'staff'");
       await sequelize.query("ALTER TABLE users MODIFY COLUMN role ENUM('admin', 'rector', 'student') NOT NULL DEFAULT 'student'");
+      await sequelize.query("ALTER TABLE bed_allocations MODIFY COLUMN status ENUM('active', 'vacated', 'transferred') NOT NULL DEFAULT 'active'");
     } catch (err) {
-      console.warn('Failed to alter users role enum:', err.message);
+      console.warn('Failed to alter enums:', err.message);
     }
     await seedAdmin();
 

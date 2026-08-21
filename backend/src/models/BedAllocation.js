@@ -8,5 +8,5 @@ export const BedAllocation = sequelize.define('BedAllocation', {
   bedNumber: { type: DataTypes.STRING(30), allowNull: false, field: 'bed_number' },
   allocatedAt: { type: DataTypes.DATEONLY, allowNull: false, defaultValue: DataTypes.NOW, field: 'allocated_at' },
   vacatedAt: { type: DataTypes.DATEONLY, allowNull: true, field: 'vacated_at' },
-  status: { type: DataTypes.ENUM('active', 'vacated'), allowNull: false, defaultValue: 'active' },
+  status: { type: DataTypes.ENUM('active', 'vacated', 'transferred'), allowNull: false, defaultValue: 'active' },
 }, { tableName: 'bed_allocations' });

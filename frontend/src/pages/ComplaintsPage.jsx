@@ -1,117 +1,198 @@
-import React, { useState, useMemo } from 'react';
-import { Box, Typography } from '@mui/material';
+import { useState, useMemo, useEffect, useCallback } from 'react';
+import { Box, Typography, CircularProgress, Snackbar, Alert, Button } from '@mui/material';
 import ComplaintStats from '../components/complaints/ComplaintStats';
 import ComplaintFilters from '../components/complaints/ComplaintFilters';
 import ComplaintTable from '../components/complaints/ComplaintTable';
+import { complaints as complaintsApi } from '../api';
+import { useAuth } from '../contexts/AuthContext';
+import { useNavigate } from 'react-router-dom';
 
-const generateMockComplaints = () => {
-  const categories = ['Electrical', 'Plumbing', 'Carpentry', 'Internet', 'Cleaning', 'Other'];
-  const titles = [
-    'Fan Not Working', 'Leaking Tap', 'Broken Chair', 'Wi-Fi disconnects frequently', 
-    'Room not cleaned properly', 'AC Cooling Issue', 'Door Lock Jammed', 'Geyser Not Heating'
-  ];
-  const firstNames = ['Sanket', 'Aarav', 'Vihaan', 'Aditya', 'Rohan', 'Neha', 'Priya', 'Aditi'];
-  const lastNames = ['Bhujbal', 'Sharma', 'Verma', 'Singh', 'Patel', 'Kumar', 'Gupta', 'Desai'];
-  const blocks = ['Block A', 'Block B', 'Block C'];
+// ── Normalise API response → shape the existing components expect ─────────────
+function fmtDate(val) {
+  if (!val) return '—';
+  try {
+    return new Date(val)
+      .toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+      .replace(/ /g, '-');
+  } catch (_) { return val; }
+}
 
-  const desiredStatusDistribution = [
-    ...Array(24).fill('Pending'),
-    ...Array(18).fill('In Progress'),
-    ...Array(114).fill('Resolved')
-  ];
+function normalize(c) {
+  // Room number: pulled from the student's active BedAllocation → Room
+  const activeAlloc = c.student?.allocations?.[0];
+  const roomNo = activeAlloc?.room?.number || '—';
 
-  return desiredStatusDistribution.map((status, index) => {
-    const studentName = index === 0 ? 'Sanket Bhujbal' : `${firstNames[Math.floor(Math.random() * firstNames.length)]} ${lastNames[Math.floor(Math.random() * lastNames.length)]}`;
-    const roomNo = index === 0 ? 'A-101' : `${blocks[Math.floor(Math.random() * blocks.length)].split(' ')[1]}-${100 + Math.floor(Math.random() * 300)}`;
-    const category = index === 0 ? 'Electrical' : categories[Math.floor(Math.random() * categories.length)];
-    const title = index === 0 ? 'Fan Not Working' : titles[Math.floor(Math.random() * titles.length)];
-    
-    let priority = 'Low';
-    if (index === 0) priority = 'High';
-    else if (index < 8) priority = 'High';
-    else if (index % 3 === 0) priority = 'Medium';
-    
-    const complaintId = `CMP${String(index + 1).padStart(3, '0')}`;
-
-    const date = new Date(2026, 5, 20 - Math.floor(Math.random() * 10));
-    const formattedDate = date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).replace(/ /g, '-');
-
-    return {
-      complaintId: index === 0 ? 'CMP001' : complaintId,
-      studentName,
-      roomNo,
-      category,
-      title,
-      priority,
-      status,
-      date: index === 0 ? '20-Jun-2026' : formattedDate
-    };
-  });
-};
-
-const INITIAL_COMPLAINTS = generateMockComplaints();
+  return {
+    complaintId:     c.complaintNumber,
+    id:              c.id,
+    studentName:     c.student
+      ? `${c.student.firstName} ${c.student.lastName}`
+      : '—',
+    roomNo,
+    category:        c.category,
+    title:           c.title,
+    priority:        c.priority,
+    status:          c.status,
+    date:            fmtDate(c.createdAt),
+    lastUpdated:     fmtDate(c.updatedAt),
+    description:     c.description,
+    attachment:      c.attachmentName || null,
+    creatorRole:     c.student?.user?.role || 'student',
+    studentUserId:   c.student?.userId || null,
+    assignedTo:      c.assignedTo
+      ? `${c.assignedTo.firstName} ${c.assignedTo.lastName}`
+      : null,
+    resolvedBy:      c.resolvedBy
+      ? `${c.resolvedBy.firstName} ${c.resolvedBy.lastName}`
+      : null,
+    resolutionNotes: c.resolutionNotes || null,
+    resolvedDate:    fmtDate(c.resolvedAt),
+    timeline: (c.timeline || [])
+      .slice()
+      .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt))
+      .map(t => ({
+        label: t.label,
+        date:  fmtDate(t.createdAt),
+        done:  true,
+      })),
+  };
+}
 
 export default function ComplaintsPage() {
-  const [complaints, setComplaints] = useState(() => {
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'admin';
+  const navigate = useNavigate();
+  const [complaints, setComplaints] = useState([]);
+  const [loading, setLoading]       = useState(true);
+  const [snackbar, setSnackbar]     = useState({ open: false, message: '', severity: 'error' });
+
+  const [filters, setFilters] = useState(() => ({
+    search: '', status: 'All', category: 'All', priority: 'All', block: 'All',
+    creatorRole: 'All',
+  }));
+
+  // ── Fetch all complaints from backend ──────────────────────────────────────
+  const fetchComplaints = useCallback(async () => {
+    setLoading(true);
     try {
-      const saved = localStorage.getItem('hostel_complaints');
-      if (saved) return JSON.parse(saved);
-    } catch (e) {
-      console.error('Failed to load complaints from local storage', e);
+      // Pass creatorRole filter to backend if admin
+      const params = {};
+      if (user?.role === 'admin' && filters.creatorRole && filters.creatorRole !== 'All') {
+        params.creatorRole = filters.creatorRole;
+      }
+      
+      const res = await complaintsApi.listAll(params);
+      const allNormalized = (res.data || []).map(normalize);
+      
+      // Rector still filters client-side to only see student complaints
+      const filtered = user?.role === 'rector'
+        ? allNormalized.filter(c => c.creatorRole === 'student')
+        : allNormalized;
+      
+      setComplaints(filtered);
+    } catch (err) {
+      setSnackbar({ open: true, message: err.message || 'Failed to load complaints.', severity: 'error' });
+    } finally {
+      setLoading(false);
     }
-    return INITIAL_COMPLAINTS;
-  });
+  }, [user, filters.creatorRole]);
 
-  React.useEffect(() => {
-    localStorage.setItem('hostel_complaints', JSON.stringify(complaints));
-  }, [complaints]);
-  const [filters, setFilters] = useState({
-    search: '',
-    status: 'All',
-    category: 'All',
-    priority: 'All',
-    block: 'All'
-  });
+  useEffect(() => { fetchComplaints(); }, [fetchComplaints]);
 
-  const handleResetFilters = () => {
-    setFilters({ search: '', status: 'All', category: 'All', priority: 'All', block: 'All' });
-  };
+  // ── Client-side filters (search + dropdowns) ───────────────────────────────
+  const handleResetFilters = () =>
+    setFilters({
+      search: '',
+      status: 'All',
+      category: 'All',
+      priority: 'All',
+      block: 'All',
+      creatorRole: 'All',
+    });
 
   const filteredComplaints = useMemo(() => {
     return complaints.filter(c => {
-      const matchesSearch = c.studentName.toLowerCase().includes(filters.search.toLowerCase()) || 
-                            c.complaintId.toLowerCase().includes(filters.search.toLowerCase()) || 
-                            c.roomNo.toLowerCase().includes(filters.search.toLowerCase()) ||
-                            c.title.toLowerCase().includes(filters.search.toLowerCase());
-      const matchesStatus = filters.status === 'All' || c.status === filters.status;
+      const q = filters.search.toLowerCase();
+      const matchesSearch =
+        !q ||
+        c.studentName.toLowerCase().includes(q) ||
+        c.complaintId.toLowerCase().includes(q) ||
+        c.roomNo.toLowerCase().includes(q) ||
+        c.title.toLowerCase().includes(q);
+
+      const matchesStatus   = filters.status   === 'All' || c.status   === filters.status;
       const matchesCategory = filters.category === 'All' || c.category === filters.category;
       const matchesPriority = filters.priority === 'All' || c.priority === filters.priority;
-      const matchesBlock = filters.block === 'All' || c.roomNo.startsWith(filters.block.split(' ')[1]);
+      const matchesCreator  = filters.creatorRole === 'All' || c.creatorRole === filters.creatorRole;
 
-      return matchesSearch && matchesStatus && matchesCategory && matchesPriority && matchesBlock;
+      // Block filter — room number starts with the block letter e.g. "A-101"
+      const matchesBlock =
+        filters.block === 'All' ||
+        c.roomNo.toUpperCase().startsWith(filters.block.split(' ')[1]);
+
+      return matchesSearch && matchesStatus && matchesCategory && matchesPriority && matchesBlock && matchesCreator;
     });
   }, [complaints, filters]);
 
-  const handleAddClick = () => {
-    console.log("Add complaint clicked");
-  };
-
   return (
     <Box sx={{ animation: 'fadeIn 0.5s ease-out' }}>
-      <Typography variant="h4" sx={{ fontWeight: 700, mb: 3 }}>
-        Complaint Management
-      </Typography>
-      
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+        <Typography variant="h4" sx={{ fontWeight: 700 }}>
+          Complaint Management
+        </Typography>
+        {user?.role === 'rector' && (
+          <Button
+            variant="outlined"
+            onClick={() => navigate('/complaints/my')}
+            sx={{
+              borderRadius: '8px',
+              textTransform: 'none',
+              fontWeight: 600,
+              borderColor: '#4F46E5',
+              color: '#4F46E5',
+              '&:hover': {
+                backgroundColor: 'rgba(79, 70, 229, 0.08)',
+                borderColor: '#4338CA',
+              }
+            }}
+          >
+            My Complaints
+          </Button>
+        )}
+      </Box>
+
       <ComplaintStats complaints={filteredComplaints} />
-      
-      <ComplaintFilters 
-        filters={filters} 
-        setFilters={setFilters} 
+
+      <ComplaintFilters
+        filters={filters}
+        setFilters={setFilters}
         onReset={handleResetFilters}
-        onAddClick={handleAddClick}
+        onAddClick={null}
+        showRoleFilter={isAdmin}
       />
-      
-      <ComplaintTable complaints={filteredComplaints} />
+
+      {loading ? (
+        <Box sx={{ display: 'flex', justifyContent: 'center', py: 10 }}>
+          <CircularProgress />
+        </Box>
+      ) : (
+        <ComplaintTable complaints={filteredComplaints} onRefresh={fetchComplaints} />
+      )}
+
+      <Snackbar
+        open={snackbar.open}
+        autoHideDuration={5000}
+        onClose={() => setSnackbar(s => ({ ...s, open: false }))}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
+        <Alert
+          severity={snackbar.severity}
+          variant="filled"
+          onClose={() => setSnackbar(s => ({ ...s, open: false }))}
+        >
+          {snackbar.message}
+        </Alert>
+      </Snackbar>
     </Box>
   );
 }

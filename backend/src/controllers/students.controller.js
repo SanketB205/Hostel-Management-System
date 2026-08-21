@@ -1,6 +1,7 @@
 import bcrypt from 'bcryptjs';
+import { Op } from 'sequelize';
 import { sequelize } from '../config/database.js';
-import { BedAllocation, Room, Student, User } from '../models/index.js';
+import { BedAllocation, Room, Student, User, StudentAttendance, Floor, HostelBlock } from '../models/index.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 
 // Converts any date string (YYYY-MM-DD or ISO) → DDMMYYYY password
@@ -16,16 +17,42 @@ const dobPassword = (dateOfBirth) => {
 
 export const listStudents = asyncHandler(async (req, res) => {
   const students = await Student.findAll({
-    include: [{
-      model: BedAllocation,
-      as: 'allocations',
-      where: { status: 'active' },
-      required: false,
-      include: [{ model: Room, as: 'room' }],
-    }],
+    include: [
+      {
+        model: User,
+        as: 'user',
+        attributes: ['role'],
+        where: { role: 'student' }
+      },
+      {
+        model: BedAllocation,
+        as: 'allocations',
+        where: { status: 'active' },
+        required: false,
+        include: [{ model: Room, as: 'room' }],
+      }
+    ],
     order: [['createdAt', 'DESC']],
   });
-  res.json({ data: students });
+
+  // Use req.query.date if provided, otherwise default to today
+  const targetDate = req.query.date || new Date().toISOString().slice(0, 10);
+  const attendances = await StudentAttendance.findAll({
+    where: { attendanceDate: targetDate },
+  });
+
+  const attendanceMap = {};
+  attendances.forEach((a) => {
+    attendanceMap[a.studentId] = a.status;
+  });
+
+  const data = students.map((s) => {
+    const sJson = s.toJSON();
+    sJson.status = attendanceMap[s.id] || 'Not Marked';
+    return sJson;
+  });
+
+  res.json({ data });
 });
 
 // ── Get single student ────────────────────────────────────────────────────────
@@ -36,12 +63,32 @@ export const getStudent = asyncHandler(async (req, res) => {
       model: BedAllocation,
       as: 'allocations',
       required: false,
-      include: [{ model: Room, as: 'room' }],
+      include: [{
+        model: Room,
+        as: 'room',
+        include: [{
+          model: Floor,
+          as: 'floor',
+          include: [{
+            model: HostelBlock,
+            as: 'block'
+          }]
+        }]
+      }],
       order: [['allocatedAt', 'DESC']],
     }],
   });
   if (!student) return res.status(404).json({ message: 'Student not found.' });
-  res.json({ data: student });
+
+  const today = new Date().toISOString().slice(0, 10);
+  const attendance = await StudentAttendance.findOne({
+    where: { studentId: student.id, attendanceDate: today },
+  });
+
+  const studentJson = student.toJSON();
+  studentJson.status = attendance ? attendance.status : 'Not Marked';
+
+  res.json({ data: studentJson });
 });
 
 // ── Create student ────────────────────────────────────────────────────────────
@@ -104,7 +151,7 @@ export const createStudent = asyncHandler(async (req, res) => {
 
 export const updateStudentStatus = asyncHandler(async (req, res) => {
   const { status } = req.body;
-  const validStatuses = ['Present', 'Absent', 'Outing', 'Leave', 'Late'];
+  const validStatuses = ['Present', 'Absent', 'Outing', 'Leave', 'Late', 'Not Marked'];
   if (!status || !validStatuses.includes(status)) {
     return res.status(400).json({ message: `Status must be one of: ${validStatuses.join(', ')}.` });
   }
@@ -112,8 +159,29 @@ export const updateStudentStatus = asyncHandler(async (req, res) => {
   const student = await Student.findByPk(req.params.id);
   if (!student) return res.status(404).json({ message: 'Student not found.' });
 
-  await student.update({ status });
-  res.json({ data: { id: student.id, status: student.status } });
+  const today = new Date().toISOString().slice(0, 10);
+
+  const [attendance, created] = await StudentAttendance.findOrCreate({
+    where: {
+      studentId: student.id,
+      attendanceDate: today,
+    },
+    defaults: {
+      studentId: student.id,
+      attendanceDate: today,
+      status,
+    },
+  });
+
+  if (!created) {
+    await attendance.update({ status });
+  }
+
+  if (status !== 'Not Marked') {
+    await student.update({ status });
+  }
+
+  res.json({ data: { id: student.id, status } });
 });
 
 export const resetStudentPassword = asyncHandler(async (req, res) => {
@@ -130,4 +198,533 @@ export const resetStudentPassword = asyncHandler(async (req, res) => {
   res.json({
     message: `Password reset to DOB format (DDMMYYYY) for ${student.firstName} ${student.lastName}.`,
   });
+});
+
+export const getAttendanceAnalytics = asyncHandler(async (req, res) => {
+  const targetDate = req.query.date || new Date().toISOString().slice(0, 10);
+  const range = req.query.range || 'Today';
+
+  const getPastDates = (endDateStr, daysCount) => {
+    const dates = [];
+    const endDate = new Date(endDateStr);
+    for (let i = daysCount - 1; i >= 0; i--) {
+      const d = new Date(endDate);
+      d.setDate(endDate.getDate() - i);
+      dates.push(d.toISOString().slice(0, 10));
+    }
+    return dates;
+  };
+
+  let datesInRange = [targetDate];
+  if (range === '7D') {
+    datesInRange = getPastDates(targetDate, 7);
+  } else if (range === '30D') {
+    datesInRange = getPastDates(targetDate, 30);
+  }
+
+  // 1. Fetch all students with active allocations
+  const students = await Student.findAll({
+    include: [
+      {
+        model: User,
+        as: 'user',
+        attributes: ['role'],
+        where: { role: 'student' }
+      },
+      {
+        model: BedAllocation,
+        as: 'allocations',
+        where: { status: 'active' },
+        required: false,
+        include: [{
+          model: Room,
+          as: 'room',
+          include: [{
+            model: Floor,
+            as: 'floor',
+            include: [{
+              model: HostelBlock,
+              as: 'block'
+            }]
+          }]
+        }]
+      }
+    ]
+  });
+
+  // 2. Fetch all attendance in datesInRange
+  const targetAttendances = await StudentAttendance.findAll({
+    where: {
+      attendanceDate: { [Op.in]: datesInRange }
+    }
+  });
+
+  const attendanceKeyMap = {};
+  targetAttendances.forEach(a => {
+    attendanceKeyMap[`${a.studentId}_${a.attendanceDate}`] = a.status;
+  });
+
+  // 3. Stats aggregated for datesInRange
+  let present = 0, absent = 0, leave = 0, outing = 0, late = 0, pending = 0;
+  students.forEach(s => {
+    datesInRange.forEach(date => {
+      const status = attendanceKeyMap[`${s.id}_${date}`] || 'Not Marked';
+      if (status === 'Present') present++;
+      else if (status === 'Absent') absent++;
+      else if (status === 'Leave') leave++;
+      else if (status === 'Outing') outing++;
+      else if (status === 'Late') late++;
+      else pending++;
+    });
+  });
+
+  const total = students.length;
+  const totalSlots = total * datesInRange.length;
+  const rate = totalSlots > 0 ? Math.round(((present + late + outing) / totalSlots) * 100) : 0;
+
+  // 4. Course-wise Attendance
+  const courseMap = {};
+  students.forEach(s => {
+    const course = s.course || 'Unknown';
+    if (!courseMap[course]) {
+      courseMap[course] = { total: 0, present: 0, absent: 0 };
+    }
+    datesInRange.forEach(date => {
+      courseMap[course].total++;
+      const status = attendanceKeyMap[`${s.id}_${date}`] || 'Not Marked';
+      if (['Present', 'Late', 'Outing'].includes(status)) {
+        courseMap[course].present++;
+      } else if (status === 'Absent') {
+        courseMap[course].absent++;
+      }
+    });
+  });
+  const courseAttendance = Object.entries(courseMap).map(([course, counts]) => ({
+    course,
+    present: counts.present,
+    absent: counts.absent,
+    rate: counts.total > 0 ? Math.round((counts.present / counts.total) * 100) : 0
+  }));
+
+  // 5. Year-wise Attendance
+  const yearMap = {};
+  students.forEach(s => {
+    const year = s.year || 'Unknown';
+    if (!yearMap[year]) {
+      yearMap[year] = { total: 0, present: 0, absent: 0 };
+    }
+    datesInRange.forEach(date => {
+      yearMap[year].total++;
+      const status = attendanceKeyMap[`${s.id}_${date}`] || 'Not Marked';
+      if (['Present', 'Late', 'Outing'].includes(status)) {
+        yearMap[year].present++;
+      } else if (status === 'Absent') {
+        yearMap[year].absent++;
+      }
+    });
+  });
+  const yearAttendance = Object.entries(yearMap).map(([year, counts]) => ({
+    year,
+    present: counts.present,
+    absent: counts.absent,
+    rate: counts.total > 0 ? Math.round((counts.present / counts.total) * 100) : 0
+  }));
+
+  // 6. Block-wise Attendance
+  const blockMap = {};
+  students.forEach(s => {
+    const block = s.allocations?.[0]?.room?.floor?.block?.name || 'Unassigned';
+    if (!blockMap[block]) {
+      blockMap[block] = { total: 0, present: 0, absent: 0 };
+    }
+    datesInRange.forEach(date => {
+      blockMap[block].total++;
+      const status = attendanceKeyMap[`${s.id}_${date}`] || 'Not Marked';
+      if (['Present', 'Late', 'Outing'].includes(status)) {
+        blockMap[block].present++;
+      } else if (status === 'Absent') {
+        blockMap[block].absent++;
+      }
+    });
+  });
+  const blockAttendance = Object.entries(blockMap).map(([block, counts]) => ({
+    block,
+    present: counts.present,
+    absent: counts.absent,
+    rate: counts.total > 0 ? Math.round((counts.present / counts.total) * 100) : 0
+  }));
+
+  // 7. Last 7 Days dates
+  const past7Days = getPastDates(targetDate, 7);
+  const weeklyAttendances = await StudentAttendance.findAll({
+    where: {
+      attendanceDate: { [Op.in]: past7Days }
+    }
+  });
+
+  const dailyStatsMap = {};
+  past7Days.forEach(date => {
+    dailyStatsMap[date] = { Present: 0, Absent: 0, Leave: 0, total: 0 };
+  });
+
+  weeklyAttendances.forEach(a => {
+    if (dailyStatsMap[a.attendanceDate]) {
+      dailyStatsMap[a.attendanceDate].total++;
+      if (['Present', 'Late', 'Outing'].includes(a.status)) {
+        dailyStatsMap[a.attendanceDate].Present++;
+      } else if (a.status === 'Absent') {
+        dailyStatsMap[a.attendanceDate].Absent++;
+      } else if (a.status === 'Leave') {
+        dailyStatsMap[a.attendanceDate].Leave++;
+      }
+    }
+  });
+
+  const weeklyTrend7D = past7Days.map(date => {
+    const dayData = dailyStatsMap[date];
+    const totalDay = dayData.total;
+    const dateObj = new Date(date);
+    const dayName = dateObj.toLocaleDateString('en-US', { weekday: 'short' });
+    
+    return {
+      name: dayName,
+      Present: totalDay > 0 ? Math.round((dayData.Present / totalDay) * 100) : 0,
+      Absent: totalDay > 0 ? Math.round((dayData.Absent / totalDay) * 100) : 0,
+      Leave: totalDay > 0 ? Math.round((dayData.Leave / totalDay) * 100) : 0
+    };
+  });
+
+  // Today trend check-in progress (based on actual attendance status marked at/before slot hour for targetDay)
+  const targetDayAttendances = targetAttendances.filter(a => a.attendanceDate === targetDate);
+  const todaySlots = ['08:00', '10:00', '12:00', '14:00', '16:00', '18:00', '20:00'];
+  const weeklyTrendToday = todaySlots.map(slot => {
+    const slotHour = parseInt(slot.split(':')[0], 10);
+    let slotPresent = 0;
+    let slotAbsent = 0;
+    let slotLeave = 0;
+    let slotTotal = 0;
+
+    targetDayAttendances.forEach(a => {
+      const recordDate = new Date(a.createdAt || a.updatedAt);
+      const recordHour = recordDate.getHours();
+      
+      if (recordHour <= slotHour) {
+        slotTotal++;
+        if (['Present', 'Late', 'Outing'].includes(a.status)) {
+          slotPresent++;
+        } else if (a.status === 'Absent') {
+          slotAbsent++;
+        } else if (a.status === 'Leave') {
+          slotLeave++;
+        }
+      }
+    });
+
+    const totalDenom = slotTotal > 0 ? slotTotal : 1;
+    
+    return {
+      name: slot,
+      Present: slotTotal > 0 ? Math.round((slotPresent / totalDenom) * 100) : 0,
+      Absent: slotTotal > 0 ? Math.round((slotAbsent / totalDenom) * 100) : 0,
+      Leave: slotTotal > 0 ? Math.round((slotLeave / totalDenom) * 100) : 0
+    };
+  });
+
+  // 30 Days trend (last 4 weeks)
+  const past30Days = getPastDates(targetDate, 28);
+  const attendances30D = await StudentAttendance.findAll({
+    where: {
+      attendanceDate: { [Op.in]: past30Days }
+    }
+  });
+
+  const weekStats = [
+    { name: 'W1', Present: 0, Absent: 0, Leave: 0, total: 0 },
+    { name: 'W2', Present: 0, Absent: 0, Leave: 0, total: 0 },
+    { name: 'W3', Present: 0, Absent: 0, Leave: 0, total: 0 },
+    { name: 'W4', Present: 0, Absent: 0, Leave: 0, total: 0 }
+  ];
+
+  attendances30D.forEach(a => {
+    const dayIdx = past30Days.indexOf(a.attendanceDate);
+    if (dayIdx >= 0) {
+      const weekIdx = Math.floor(dayIdx / 7);
+      if (weekIdx >= 0 && weekIdx < 4) {
+        weekStats[weekIdx].total++;
+        if (['Present', 'Late', 'Outing'].includes(a.status)) {
+          weekStats[weekIdx].Present++;
+        } else if (a.status === 'Absent') {
+          weekStats[weekIdx].Absent++;
+        } else if (a.status === 'Leave') {
+          weekStats[weekIdx].Leave++;
+        }
+      }
+    }
+  });
+
+  const weeklyTrend30D = weekStats.map(w => {
+    const totalW = w.total;
+    return {
+      name: w.name,
+      Present: totalW > 0 ? Math.round((w.Present / totalW) * 100) : 0,
+      Absent: totalW > 0 ? Math.round((w.Absent / totalW) * 100) : 0,
+      Leave: totalW > 0 ? Math.round((w.Leave / totalW) * 100) : 0
+    };
+  });
+
+  // 8. Students requiring attention (rates < 75%)
+  const allHistory = await StudentAttendance.findAll();
+  const studentHistoryMap = {};
+  allHistory.forEach(a => {
+    if (!studentHistoryMap[a.studentId]) {
+      studentHistoryMap[a.studentId] = { total: 0, present: 0 };
+    }
+    studentHistoryMap[a.studentId].total++;
+    if (['Present', 'Late', 'Outing'].includes(a.status)) {
+      studentHistoryMap[a.studentId].present++;
+    }
+  });
+
+  const attentionStudents = [];
+  students.forEach(s => {
+    const history = studentHistoryMap[s.id];
+    if (history && history.total > 2) {
+      const rateVal = Math.round((history.present / history.total) * 100);
+      if (rateVal < 75) {
+        attentionStudents.push({
+          name: `${s.firstName} ${s.lastName}`,
+          issue: 'Attendance Below 75%',
+          rate: rateVal
+        });
+      }
+    }
+  });
+
+  // 9. Monthly rates for this year
+  const targetYear = new Date(targetDate).getFullYear();
+  const monthlyRates = [];
+  const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  
+  for (let m = 0; m < 12; m++) {
+    const monthStr = String(m + 1).padStart(2, '0');
+    const monthAttendances = allHistory.filter(a => 
+      a.attendanceDate.startsWith(`${targetYear}-${monthStr}`)
+    );
+    
+    if (monthAttendances.length > 0) {
+      let mPresent = 0;
+      monthAttendances.forEach(a => {
+        if (['Present', 'Late', 'Outing'].includes(a.status)) mPresent++;
+      });
+      monthlyRates.push({
+        name: monthNames[m],
+        rate: Math.round((mPresent / monthAttendances.length) * 100)
+      });
+    } else {
+      monthlyRates.push({
+        name: monthNames[m],
+        rate: 0
+      });
+    }
+  }
+
+  // 10. Recent activity
+  const sortedAttendances = [...targetAttendances].sort((a, b) => 
+    new Date(b.updatedAt || b.createdAt) - new Date(a.updatedAt || a.createdAt)
+  ).slice(0, 10);
+
+  const studentMap = {};
+  students.forEach(s => {
+    studentMap[s.id] = `${s.firstName} ${s.lastName}`;
+  });
+
+  const recentActivities = sortedAttendances.map(a => {
+    const dateObj = new Date(a.updatedAt || a.createdAt);
+    const timeStr = dateObj.toLocaleTimeString('en-US', {
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+    
+    let displayTime = timeStr;
+    if (range !== 'Today') {
+      const dateStr = dateObj.toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric'
+      });
+      displayTime = `${dateStr}, ${timeStr}`;
+    }
+
+    return {
+      time: displayTime,
+      name: studentMap[a.studentId] || 'Unknown Student',
+      status: a.status
+    };
+  });
+
+  res.json({
+    data: {
+      stats: {
+        total,
+        totalSlots,
+        present,
+        absent,
+        leave,
+        outing,
+        late,
+        pending,
+        rate
+      },
+      weeklyTrend: {
+        '7D': weeklyTrend7D,
+        '30D': weeklyTrend30D,
+        'Today': weeklyTrendToday
+      },
+      courseAttendance,
+      yearAttendance,
+      blockAttendance,
+      attentionStudents,
+      monthlyRates,
+      recentActivities
+    }
+  });
+});
+
+export const deleteStudent = asyncHandler(async (req, res) => {
+  const student = await Student.findByPk(req.params.id);
+  if (!student) return res.status(404).json({ message: 'Student not found.' });
+
+  await sequelize.transaction(async (transaction) => {
+    // 1. Get active bed allocations to update room capacity if needed
+    const activeAlloc = await BedAllocation.findOne({
+      where: { studentId: student.id, status: 'active' },
+      transaction
+    });
+
+    if (activeAlloc) {
+      const room = await Room.findByPk(activeAlloc.roomId, { transaction });
+      if (room) {
+        const occupiedBeds = await BedAllocation.count({
+          where: { roomId: room.id, status: 'active', id: { [Op.ne]: activeAlloc.id } },
+          transaction
+        });
+        
+        const nextStatus = occupiedBeds === 0 ? 'Available' : 'Occupied';
+        await room.update({ status: nextStatus }, { transaction });
+      }
+      
+      await activeAlloc.update({ status: 'vacated', vacatedAt: new Date() }, { transaction });
+    }
+
+    // 2. Delete linked User account
+    if (student.userId) {
+      await User.destroy({ where: { id: student.userId }, transaction });
+    }
+
+    // 3. Delete Student
+    await student.destroy({ transaction });
+  });
+
+  res.json({ message: 'Student and linked login credentials deleted successfully.' });
+});
+
+// ── Update student ────────────────────────────────────────────────────────────
+
+export const updateStudent = asyncHandler(async (req, res) => {
+  const student = await Student.findByPk(req.params.id);
+  if (!student) return res.status(404).json({ message: 'Student not found.' });
+
+  const { registrationNumber, email } = req.body;
+
+  if (email && email.trim().toLowerCase() !== student.email) {
+    const existingEmail = await Student.findOne({
+      where: { email: email.trim().toLowerCase() }
+    });
+    if (existingEmail) {
+      return res.status(400).json({ message: 'Email is already in use by another student.' });
+    }
+  }
+
+  if (registrationNumber && registrationNumber !== student.registrationNumber) {
+    const existingReg = await Student.findOne({
+      where: { registrationNumber }
+    });
+    if (existingReg) {
+      return res.status(400).json({ message: 'Registration number is already in use.' });
+    }
+  }
+
+  await sequelize.transaction(async (transaction) => {
+    // 1. Update associated User email if email changed
+    if (email && email.trim().toLowerCase() !== student.email && student.userId) {
+      const user = await User.findByPk(student.userId, { transaction });
+      if (user) {
+        await user.update({ email: email.trim().toLowerCase() }, { transaction });
+      }
+    }
+
+    // 2. Update student details
+    await student.update(req.body, { transaction });
+
+    // 3. Update allocation details if provided
+    const allocationData = req.body.allocation;
+    if (allocationData && allocationData.roomNumber && allocationData.bedNumber) {
+      // Find current active allocation
+      const activeAlloc = await BedAllocation.findOne({
+        where: { studentId: student.id, status: 'active' },
+        include: [{ model: Room, as: 'room' }],
+        transaction
+      });
+
+      const newRoomNumber = String(allocationData.roomNumber || '').trim().toUpperCase();
+      const newBedNumber = String(allocationData.bedNumber || '').trim();
+
+      const isSameAllocation = activeAlloc && 
+        activeAlloc.room?.number === newRoomNumber && 
+        activeAlloc.bedNumber === newBedNumber;
+
+      if (!isSameAllocation) {
+        // Vacate current allocation if exists
+        if (activeAlloc) {
+          const oldRoom = await Room.findByPk(activeAlloc.roomId, { transaction, lock: transaction.LOCK.UPDATE });
+          if (oldRoom) {
+            const occupiedBeds = await BedAllocation.count({
+              where: { roomId: oldRoom.id, status: 'active', id: { [Op.ne]: activeAlloc.id } },
+              transaction
+            });
+            const nextStatus = occupiedBeds === 0 ? 'Available' : 'Occupied';
+            await oldRoom.update({ status: nextStatus }, { transaction });
+          }
+          await activeAlloc.update({ status: 'transferred', vacatedAt: new Date() }, { transaction });
+        }
+
+        // Allocate new room/bed
+        const room = await Room.findOne({ where: { number: newRoomNumber }, transaction, lock: transaction.LOCK.UPDATE });
+        if (!room) throw Object.assign(new Error('Selected room was not found in the database.'), { status: 404 });
+        if (room.status === 'Maintenance') throw Object.assign(new Error('Maintenance rooms cannot receive allocations.'), { status: 409 });
+
+        const occupiedBeds = await BedAllocation.count({ where: { roomId: room.id, status: 'active' }, transaction });
+        if (occupiedBeds >= room.capacity) throw Object.assign(new Error('Selected room is already full.'), { status: 409 });
+
+        const occupiedBed = await BedAllocation.findOne({
+          where: { roomId: room.id, bedNumber: newBedNumber, status: 'active' },
+          transaction,
+          lock: transaction.LOCK.UPDATE,
+        });
+        if (occupiedBed) throw Object.assign(new Error('Selected bed is already allocated.'), { status: 409 });
+
+        await BedAllocation.create({
+          studentId: student.id,
+          roomId: room.id,
+          bedNumber: newBedNumber,
+          allocatedAt: allocationData.allocatedAt || new Date(),
+        }, { transaction });
+
+        await room.update({
+          status: occupiedBeds + 1 >= room.capacity ? 'Full' : 'Occupied',
+        }, { transaction });
+      }
+    }
+  });
+
+  res.json({ message: 'Student details updated successfully.', data: student });
 });

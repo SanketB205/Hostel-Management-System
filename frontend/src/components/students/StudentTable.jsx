@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Box,
   Card,
@@ -18,7 +18,7 @@ import {
   MenuItem,
   CircularProgress,
 } from '@mui/material';
-import { Eye } from 'lucide-react';
+import { Eye, AlertCircle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 // ── Status config ─────────────────────────────────────────────────────────────
@@ -26,21 +26,28 @@ import { useNavigate } from 'react-router-dom';
 const STATUS_OPTIONS = ['Present', 'Outing', 'Leave', 'Late', 'Absent'];
 
 const STATUS_COLORS = {
-  Present: { color: '#16A34A', bg: 'rgba(34,197,94,0.12)',  dot: '🟢' },
-  Outing:  { color: '#D97706', bg: 'rgba(245,158,11,0.12)', dot: '🟡' },
-  Leave:   { color: '#2563EB', bg: 'rgba(59,130,246,0.12)', dot: '🔵' },
-  Late:    { color: '#EA580C', bg: 'rgba(249,115,22,0.12)', dot: '🟠' },
-  Absent:  { color: '#DC2626', bg: 'rgba(239,68,68,0.12)',  dot: '🔴' },
+  Present:    { color: '#16A34A', bg: 'rgba(34,197,94,0.12)',   dot: '🟢' },
+  Outing:     { color: '#D97706', bg: 'rgba(245,158,11,0.12)',  dot: '🟡' },
+  Leave:      { color: '#2563EB', bg: 'rgba(59,130,246,0.12)',  dot: '🔵' },
+  Late:       { color: '#EA580C', bg: 'rgba(249,115,22,0.12)',  dot: '🟠' },
+  Absent:     { color: '#DC2626', bg: 'rgba(239,68,68,0.12)',   dot: '🔴' },
+  'Not Marked':{ color: '#64748B', bg: 'rgba(100,116,139,0.1)', dot: '❓' },
 };
 
 // ── Inline status dropdown (rector only) ─────────────────────────────────────
 
+const NOT_MARKED = 'Not Marked';
+
 function StatusCell({ studentId, status, marked, onStatusChange }) {
   const [saving, setSaving] = useState(false);
-  const cfg = marked ? (STATUS_COLORS[status] || STATUS_COLORS.Present) : null;
+
+  // Current display value — always a real string, never empty
+  const currentValue = marked ? (status || NOT_MARKED) : NOT_MARKED;
+  const cfg = STATUS_COLORS[currentValue] || STATUS_COLORS[NOT_MARKED];
 
   const handleChange = async (e) => {
     const newStatus = e.target.value;
+    if (newStatus === NOT_MARKED) return; // guard — shouldn't be selectable
     setSaving(true);
     await onStatusChange(studentId, newStatus);
     setSaving(false);
@@ -49,7 +56,7 @@ function StatusCell({ studentId, status, marked, onStatusChange }) {
   return (
     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
       <Select
-        value={marked ? status : ''}
+        value={currentValue}
         onChange={handleChange}
         disabled={saving}
         size="small"
@@ -59,69 +66,90 @@ function StatusCell({ studentId, status, marked, onStatusChange }) {
           minWidth: 145,
           fontWeight: 600,
           fontSize: '0.82rem',
-          color: cfg ? cfg.color : 'text.secondary',
-          backgroundColor: cfg ? cfg.bg : 'rgba(0,0,0,0.04)',
+          color: cfg.color,
+          backgroundColor: cfg.bg,
           borderRadius: '8px',
           '& .MuiOutlinedInput-notchedOutline': {
-            borderColor: cfg ? cfg.color + '55' : 'rgba(0,0,0,0.15)',
+            borderColor: cfg.color + '55',
           },
           '&:hover .MuiOutlinedInput-notchedOutline': {
-            borderColor: cfg ? cfg.color : 'rgba(0,0,0,0.3)',
+            borderColor: cfg.color,
           },
           '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
-            borderColor: cfg ? cfg.color : '#4F46E5',
+            borderColor: cfg.color,
           },
-          '& .MuiSelect-icon': { color: cfg ? cfg.color : 'text.secondary' },
+          '& .MuiSelect-icon': { color: cfg.color },
         }}
         renderValue={(val) => {
-          if (!val) {
-            return (
-              <Typography variant="body2" sx={{ color: 'text.disabled', fontStyle: 'italic', fontSize: '0.82rem' }}>
-                Not Marked
-              </Typography>
-            );
-          }
-          const c = STATUS_COLORS[val];
+          const c = STATUS_COLORS[val] || STATUS_COLORS[NOT_MARKED];
           return (
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
-              <span>{c?.dot}</span>
+              <span>{c.dot}</span>
               <span>{val}</span>
             </Box>
           );
         }}
       >
-        {/* Placeholder — not selectable */}
-        <MenuItem value="" disabled sx={{ display: 'none' }} />
+        {/* Not Marked — shown at top, disabled so it can't be re-selected */}
+        <MenuItem value={NOT_MARKED} disabled sx={{
+          opacity: '1 !important',
+          fontStyle: 'italic',
+          fontSize: '0.82rem',
+          color: STATUS_COLORS[NOT_MARKED].color,
+        }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Box sx={{ width: 10, height: 10, borderRadius: '50%', backgroundColor: STATUS_COLORS[NOT_MARKED].color, flexShrink: 0 }} />
+            <Typography variant="body2" sx={{ fontWeight: 500, color: STATUS_COLORS[NOT_MARKED].color, fontStyle: 'italic' }}>
+              Not Marked
+            </Typography>
+          </Box>
+        </MenuItem>
+
         {STATUS_OPTIONS.map(opt => {
           const c = STATUS_COLORS[opt];
           return (
             <MenuItem key={opt} value={opt}>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                <Box sx={{
-                  width: 10, height: 10, borderRadius: '50%',
-                  backgroundColor: c.color, flexShrink: 0,
-                }} />
+                <Box sx={{ width: 10, height: 10, borderRadius: '50%', backgroundColor: c.color, flexShrink: 0 }} />
                 <Typography variant="body2" sx={{ fontWeight: 500, color: c.color }}>{opt}</Typography>
               </Box>
             </MenuItem>
           );
         })}
       </Select>
-      {saving && <CircularProgress size={14} sx={{ color: cfg ? cfg.color : '#4F46E5' }} />}
+      {saving && <CircularProgress size={14} sx={{ color: cfg.color }} />}
     </Box>
   );
 }
 
 // ── Main table ────────────────────────────────────────────────────────────────
 
-export default function StudentTable({ students, isRector = false, onStatusChange }) {
+export default function StudentTable({ students, isRector = false, isAdmin = false, onStatusChange }) {
   const navigate = useNavigate();
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const [orderBy, setOrderBy] = useState('name');
   const [order, setOrder] = useState('asc');
-  // Track which students the rector has already marked today (session-only)
-  const [markedIds, setMarkedIds] = useState(new Set());
+  // Track which students the rector has already marked today
+  const [markedIds, setMarkedIds] = useState(() => {
+    const initialMarked = new Set();
+    students.forEach(s => {
+      if (s.status && s.status !== 'Not Marked') {
+        initialMarked.add(s.id);
+      }
+    });
+    return initialMarked;
+  });
+
+  useEffect(() => {
+    const newMarked = new Set();
+    students.forEach(s => {
+      if (s.status && s.status !== 'Not Marked') {
+        newMarked.add(s.id);
+      }
+    });
+    setMarkedIds(newMarked);
+  }, [students]);
 
   const handleRequestSort = (property) => {
     const isAsc = orderBy === property && order === 'asc';
@@ -150,9 +178,32 @@ export default function StudentTable({ students, isRector = false, onStatusChang
     { id: 'actions', label: 'Actions', disableSort: true },
   ];
 
+  const unmarkedCount = students.length - markedIds.size;
+
   return (
-    <Card sx={{ borderRadius: '16px', overflow: 'hidden', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' }}>
-      <TableContainer sx={{ maxHeight: 600 }}>
+    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+      {isRector && unmarkedCount > 0 && (
+        <Box 
+          sx={{ 
+            display: 'flex', 
+            alignItems: 'center', 
+            gap: 2, 
+            backgroundColor: (theme) => theme.palette.mode === 'light' ? 'rgba(245, 158, 11, 0.08)' : 'rgba(245, 158, 11, 0.15)',
+            borderLeft: '4px solid #F59E0B',
+            borderRadius: '8px',
+            p: 2,
+            boxShadow: '0 2px 4px rgba(0,0,0,0.02)',
+            animation: 'fadeIn 0.3s ease-out'
+          }}
+        >
+          <AlertCircle size={20} color="#F59E0B" />
+          <Typography variant="body2" sx={{ color: (theme) => theme.palette.mode === 'light' ? '#B45309' : '#FDE68A', fontWeight: 600 }}>
+            {unmarkedCount} student{unmarkedCount > 1 ? 's have' : ' has'} not had their attendance marked today.
+          </Typography>
+        </Box>
+      )}
+      <Card sx={{ borderRadius: '16px', overflow: 'hidden', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' }}>
+        <TableContainer sx={{ maxHeight: 600 }}>
         <Table stickyHeader>
           <TableHead>
             <TableRow>
@@ -202,7 +253,7 @@ export default function StudentTable({ students, isRector = false, onStatusChang
                   <TableCell>{row.course}</TableCell>
                   <TableCell>{row.year}</TableCell>
 
-                  {/* Status — editable dropdown for rector, read-only chip for others */}
+                  {/* Status — editable dropdown for rector, read-only chip for admin/others */}
                   <TableCell>
                     {isRector ? (
                       <StatusCell
@@ -215,15 +266,20 @@ export default function StudentTable({ students, isRector = false, onStatusChang
                         }}
                       />
                     ) : (
-                      <Chip
-                        label={`${STATUS_COLORS[row.status]?.dot ?? ''} ${row.status}`}
-                        size="small"
-                        sx={{
-                          fontWeight: 600,
-                          backgroundColor: STATUS_COLORS[row.status]?.bg,
-                          color: STATUS_COLORS[row.status]?.color,
-                        }}
-                      />
+                      (() => {
+                        // Normalise: treat null/undefined/'Not Marked' uniformly
+                        const displayStatus = (row.status && row.status !== 'Not Marked')
+                          ? row.status
+                          : 'Not Marked';
+                        const cfg = STATUS_COLORS[displayStatus] || STATUS_COLORS['Not Marked'];
+                        return (
+                          <Chip
+                            label={`${cfg.dot} ${displayStatus}`}
+                            size="small"
+                            sx={{ fontWeight: 600, backgroundColor: cfg.bg, color: cfg.color }}
+                          />
+                        );
+                      })()
                     )}
                   </TableCell>
 
@@ -257,6 +313,7 @@ export default function StudentTable({ students, isRector = false, onStatusChang
         onPageChange={(_, p) => setPage(p)}
         onRowsPerPageChange={(e) => { setRowsPerPage(parseInt(e.target.value, 10)); setPage(0); }}
       />
-    </Card>
+      </Card>
+    </Box>
   );
 }

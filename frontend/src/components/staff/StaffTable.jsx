@@ -16,6 +16,7 @@ import {
   Typography
 } from '@mui/material';
 import { Eye } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 
 const STATUS_COLORS = {
   Active: { color: '#16A34A', bg: 'rgba(34, 197, 94, 0.1)', dot: '🟢' },
@@ -24,6 +25,7 @@ const STATUS_COLORS = {
 };
 
 export default function StaffTable({ staff }) {
+  const navigate = useNavigate();
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const [orderBy, setOrderBy] = useState('name');
@@ -115,7 +117,11 @@ export default function StaffTable({ staff }) {
                   <TableCell>{row.assignedBlock}</TableCell>
                   <TableCell align="right">
                     <Tooltip title="View Details">
-                      <IconButton size="small" sx={{ color: 'text.secondary', '&:hover': { color: '#4F46E5', backgroundColor: 'rgba(79, 70, 229, 0.1)' } }}>
+                      <IconButton 
+                        size="small" 
+                        onClick={() => navigate(`/staff/${row.id}`)}
+                        sx={{ color: 'text.secondary', '&:hover': { color: '#4F46E5', backgroundColor: 'rgba(79, 70, 229, 0.1)' } }}
+                      >
                         <Eye size={18} />
                       </IconButton>
                     </Tooltip>

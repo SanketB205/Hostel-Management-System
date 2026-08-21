@@ -69,15 +69,28 @@ export const hostel = {
   /** Returns students currently allocated to a specific room (by room DB id). */
   getRoomStudents: (roomId) =>
     request('GET', `/hostel/rooms/${roomId}/students`),
+
+  deleteRoom: (roomId) =>
+    request('DELETE', `/hostel/rooms/${roomId}`),
 };
 
 // ── Students ──────────────────────────────────────────────────────────────────
 export const students = {
-  list: () => request('GET', '/students'),
+  list: (params) => request('GET', `/students${params?.date ? `?date=${params.date}` : ''}`),
   getById: (id) => request('GET', `/students/${id}`),
   create: (studentData) => request('POST', '/students', studentData),
+  update: (id, studentData) => request('PUT', `/students/${id}`, studentData),
   updateStatus: (id, status) => request('PATCH', `/students/${id}/status`, { status }),
+  /** Admin resets a student's password back to their DOB (DDMMYYYY) */
   resetPassword: (id) => request('POST', `/students/${id}/reset-password`),
+  attendanceAnalytics: (date, range) => {
+    let url = `/students/attendance/analytics?date=${date || ''}`;
+    if (range) {
+      url += `&range=${range}`;
+    }
+    return request('GET', url);
+  },
+  delete: (id) => request('DELETE', `/students/${id}`),
 };
 
 // ── Allocations ───────────────────────────────────────────────────────────────
@@ -90,6 +103,47 @@ export const allocations = {
 // ── Staff ─────────────────────────────────────────────────────────────────────
 export const staff = {
   list: () => request('GET', '/staff'),
+  getById: (id) => request('GET', `/staff/${id}`),
   create: (staffData) => request('POST', '/staff', staffData),
 };
 
+// ── Complaints ────────────────────────────────────────────────────────────────
+export const complaints = {
+  /** Student: raise a new complaint */
+  raise: (data) => request('POST', '/complaints/my', data),
+
+  /** Student: list own complaints with optional filters */
+  listMine: (params = {}) => {
+    const qs = new URLSearchParams(
+      Object.entries(params).filter(([, v]) => v && v !== 'All')
+    ).toString();
+    return request('GET', `/complaints/my${qs ? `?${qs}` : ''}`);
+  },
+
+  /** Student: get a single own complaint by id */
+  getMine: (id) => request('GET', `/complaints/my/${id}`),
+
+  /** Admin / Rector: list all complaints with optional filters */
+  listAll: (params = {}) => {
+    const qs = new URLSearchParams(
+      Object.entries(params).filter(([, v]) => v && v !== 'All')
+    ).toString();
+    return request('GET', `/complaints${qs ? `?${qs}` : ''}`);
+  },
+
+  /** Admin / Rector: get any complaint by id */
+  get: (id) => request('GET', `/complaints/${id}`),
+
+  /** Admin / Rector: update status / assign / resolve */
+  update: (id, data) => request('PATCH', `/complaints/${id}`, data),
+
+  /** Admin / Rector: delete a complaint */
+  delete: (id) => request('DELETE', `/complaints/${id}`),
+};
+
+
+// ── Bootstrap / Demo utilities ────────────────────────────────────────────────
+export const bootstrap = {
+  /** Admin only: delete today's attendance records → all students revert to Not Marked */
+  clearTodayAttendance: () => request('DELETE', '/bootstrap/attendance/today'),
+};

@@ -1,7 +1,7 @@
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import { env } from '../config/env.js';
-import { Student, User } from '../models/index.js';
+import { Staff, Student, User } from '../models/index.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 
 const createToken = (user) => jwt.sign({ role: user.role }, env.jwtSecret, {
@@ -28,7 +28,40 @@ export const login = asyncHandler(async (req, res) => {
 });
 
 export const me = asyncHandler(async (req, res) => {
-  res.json({ user: { id: req.user.id, email: req.user.email, role: req.user.role } });
+  const { id, email, role, lastLoginAt } = req.user;
+
+  let profile = null;
+
+  if (role === 'student') {
+    const student = await Student.findOne({ where: { userId: id } });
+    if (student) {
+      profile = {
+        name: `${student.firstName} ${student.lastName}`,
+        phone: student.phone || null,
+        username: student.registrationNumber,
+      };
+    }
+  } else if (role === 'rector' || role === 'admin') {
+    const staff = await Staff.findOne({ where: { userId: id } });
+    if (staff) {
+      profile = {
+        name: `${staff.firstName} ${staff.lastName}`,
+        phone: staff.phone || null,
+        username: staff.staffId,
+        designation: staff.designation,
+      };
+    }
+  }
+
+  res.json({
+    user: {
+      id,
+      email,
+      role,
+      lastLoginAt,
+      ...(profile || {}),
+    },
+  });
 });
 
 export const logout = (req, res) => res.status(204).send();

@@ -1,14 +1,17 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Box, Card, Typography, LinearProgress, Chip, IconButton,
-  Menu, MenuItem, ListItemIcon, Dialog, DialogTitle, DialogContent,
-  Divider, Avatar, CircularProgress
+  Dialog, DialogTitle, DialogContent, DialogActions, Button,
+  Divider, Avatar, CircularProgress, Tooltip, Snackbar, Alert
 } from '@mui/material';
 import {
-  MoreVertical, Eye, Users, UserPlus, Edit, X,
-  GraduationCap, Hash, BookOpen, CalendarDays
+  Eye, Users, X,
+  GraduationCap, Hash, BookOpen, CalendarDays, Trash2
 } from 'lucide-react';
 import { useRoomContext } from '../../contexts/RoomContext';
+import { useAuth } from '../../contexts/AuthContext';
+import { hostel } from '../../api';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -87,21 +90,24 @@ function StudentCard({ student, index }) {
 // ── RoomCard ──────────────────────────────────────────────────────────────────
 
 export default function RoomCard({ room }) {
-  const [anchorEl, setAnchorEl] = useState(null);
+  const navigate = useNavigate();
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'admin';
+
   const [dialogOpen, setDialogOpen] = useState(false);
   const [allocatedStudents, setAllocatedStudents] = useState([]);
   const [studentsLoading, setStudentsLoading] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [deleteWarningOpen, setDeleteWarningOpen] = useState(false);
+  const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
 
-  const { getStudentsForRoom } = useRoomContext();
-  const menuOpen = Boolean(anchorEl);
+  const { getStudentsForRoom, fetchBlocks } = useRoomContext();
 
   const config = STATUS_CONFIG[room.status] || STATUS_CONFIG.Available;
   const bedsOccupied = room.bedsOccupied || 0;
   const occupancyPct = room.capacity > 0 ? Math.min((bedsOccupied / room.capacity) * 100, 100) : 0;
 
-  // Fetch students from backend and open dialog
   const handleViewRoom = async () => {
-    setAnchorEl(null);
     setDialogOpen(true);
     setStudentsLoading(true);
     const data = await getStudentsForRoom(room.id);
@@ -112,6 +118,29 @@ export default function RoomCard({ room }) {
   const handleCloseDialog = () => {
     setDialogOpen(false);
     setAllocatedStudents([]);
+  };
+
+  const handleDeleteClick = () => {
+    if (allocatedStudents.length > 0) {
+      setDeleteWarningOpen(true);
+    } else {
+      setDeleteConfirmOpen(true);
+    }
+  };
+
+  const handleDeleteRoom = async () => {
+    try {
+      await hostel.deleteRoom(room.id);
+      setDeleteConfirmOpen(false);
+      setDialogOpen(false);
+      if (fetchBlocks) {
+        await fetchBlocks(true);
+      }
+      setSnackbar({ open: true, message: `Room ${room.number} deleted successfully.`, severity: 'success' });
+    } catch (err) {
+      console.error('Failed to delete room:', err);
+      setSnackbar({ open: true, message: err.message || 'Failed to delete room.', severity: 'error' });
+    }
   };
 
   return (
@@ -130,9 +159,19 @@ export default function RoomCard({ room }) {
             <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>{room.number}</Typography>
             <Typography variant="body2" sx={{ color: 'text.secondary', fontSize: '0.8rem' }}>{room.type}</Typography>
           </Box>
-          <IconButton size="small" onClick={(e) => setAnchorEl(e.currentTarget)} sx={{ mt: -0.5, mr: -1 }}>
-            <MoreVertical size={16} />
-          </IconButton>
+          <Tooltip title="View Room">
+            <IconButton
+              size="small"
+              onClick={handleViewRoom}
+              sx={{
+                mt: -0.5, mr: -1,
+                color: 'text.secondary',
+                '&:hover': { color: '#4F46E5', backgroundColor: 'rgba(79,70,229,0.08)' },
+              }}
+            >
+              <Eye size={16} />
+            </IconButton>
+          </Tooltip>
         </Box>
 
         {/* Beds */}
@@ -159,27 +198,6 @@ export default function RoomCard({ room }) {
           backgroundColor: config.bg, color: config.color,
           fontWeight: 600, width: '100%', borderRadius: '6px'
         }} />
-
-        {/* Context menu */}
-        <Menu
-          anchorEl={anchorEl}
-          open={menuOpen}
-          onClose={() => setAnchorEl(null)}
-          PaperProps={{ sx: { borderRadius: 2, minWidth: 165, boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' } }}
-        >
-          <MenuItem onClick={handleViewRoom} sx={{ fontSize: '0.875rem' }}>
-            <ListItemIcon><Eye size={16} /></ListItemIcon> View Room
-          </MenuItem>
-          <MenuItem onClick={() => setAnchorEl(null)} sx={{ fontSize: '0.875rem' }}>
-            <ListItemIcon><Users size={16} /></ListItemIcon> View Students
-          </MenuItem>
-          <MenuItem onClick={() => setAnchorEl(null)} sx={{ fontSize: '0.875rem' }}>
-            <ListItemIcon><UserPlus size={16} /></ListItemIcon> Allocate Student
-          </MenuItem>
-          <MenuItem onClick={() => setAnchorEl(null)} sx={{ fontSize: '0.875rem' }}>
-            <ListItemIcon><Edit size={16} /></ListItemIcon> Edit Room
-          </MenuItem>
-        </Menu>
       </Card>
 
       {/* ── View Room Dialog ── */}
@@ -188,10 +206,10 @@ export default function RoomCard({ room }) {
         onClose={handleCloseDialog}
         maxWidth="sm"
         fullWidth
-        PaperProps={{ sx: { borderRadius: '16px', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)' } }}
+        slotProps={{ paper: { sx: { borderRadius: '16px', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)' } } }}
       >
         {/* Dialog header */}
-        <DialogTitle sx={{ p: 3, pb: 2 }}>
+        <DialogTitle component="div" sx={{ p: 3, pb: 2 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
               <Box sx={{
@@ -272,7 +290,159 @@ export default function RoomCard({ room }) {
             </Box>
           )}
         </DialogContent>
+        {isAdmin && (
+          <>
+            <Divider />
+            <DialogActions sx={{ px: 3, pb: 3, pt: 2, justifyContent: 'flex-end' }}>
+              <Button
+                variant="contained"
+                color="error"
+                startIcon={<Trash2 size={18} />}
+                onClick={handleDeleteClick}
+                sx={{
+                  backgroundColor: '#DC2626',
+                  '&:hover': { backgroundColor: '#B91C1C' },
+                  borderRadius: '8px',
+                  textTransform: 'none',
+                  fontWeight: 600,
+                  px: 3,
+                  py: 1
+                }}
+              >
+                Delete Room
+              </Button>
+            </DialogActions>
+          </>
+        )}
       </Dialog>
+
+      {/* ── Cannot Delete Room Warning Dialog ── */}
+      <Dialog
+        open={deleteWarningOpen}
+        onClose={() => setDeleteWarningOpen(false)}
+        maxWidth="sm"
+        fullWidth
+        slotProps={{ paper: { sx: { borderRadius: '16px', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)' } } }}
+      >
+        <DialogTitle component="div" sx={{ p: 3, pb: 2, display: 'flex', alignItems: 'center', gap: 1.5 }}>
+          <Box sx={{
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            width: 40, height: 40, borderRadius: '50%',
+            backgroundColor: 'rgba(239, 68, 68, 0.1)', color: '#EF4444'
+          }}>
+            <Trash2 size={20} />
+          </Box>
+          <Typography variant="h6" sx={{ fontWeight: 700 }}>Cannot Delete Room</Typography>
+        </DialogTitle>
+
+        <DialogContent sx={{ px: 3, pb: 3 }}>
+          <Typography variant="body2" sx={{ color: 'text.secondary', mb: 3 }}>
+            This room currently has students allocated. Transfer all students before deleting this room.
+          </Typography>
+
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            {allocatedStudents.map(student => (
+              <Box key={student.id} sx={{
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                p: 2, border: '1px solid', borderColor: 'divider', borderRadius: '12px',
+                backgroundColor: 'rgba(0,0,0,0.01)'
+              }}>
+                <Box>
+                  <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>{student.name}</Typography>
+                  <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mb: 0.5 }}>
+                    Reg No: {student.regNo}
+                  </Typography>
+                  <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                    Current Room: {room.number}
+                  </Typography>
+                </Box>
+                <Button
+                  variant="contained"
+                  size="small"
+                  onClick={() => {
+                    setDeleteWarningOpen(false);
+                    setDialogOpen(false);
+                    navigate(`/students/edit/${student.id}?focus=hostel`);
+                  }}
+                  sx={{
+                    backgroundColor: '#4F46E5',
+                    '&:hover': { backgroundColor: '#4338CA' },
+                    textTransform: 'none',
+                    fontWeight: 600,
+                    borderRadius: '6px',
+                    px: 2
+                  }}
+                >
+                  Transfer
+                </Button>
+              </Box>
+            ))}
+          </Box>
+        </DialogContent>
+
+        <Divider />
+        <DialogActions sx={{ p: 2 }}>
+          <Button onClick={() => setDeleteWarningOpen(false)} sx={{ color: 'text.secondary', textTransform: 'none', fontWeight: 600 }}>
+            Close
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* ── Normal Delete Confirmation Dialog ── */}
+      <Dialog
+        open={deleteConfirmOpen}
+        onClose={() => setDeleteConfirmOpen(false)}
+        maxWidth="xs"
+        fullWidth
+        slotProps={{ paper: { sx: { borderRadius: '16px' } } }}
+      >
+        <DialogTitle component="div" sx={{ p: 3, pb: 2 }}>
+          <Typography variant="h6" sx={{ fontWeight: 700 }}>Delete Room</Typography>
+        </DialogTitle>
+
+        <DialogContent sx={{ px: 3, pb: 3 }}>
+          <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+            Are you sure you want to delete Room <strong>{room.number}</strong>? This action cannot be undone.
+          </Typography>
+        </DialogContent>
+
+        <Divider />
+        <DialogActions sx={{ p: 2, display: 'flex', gap: 1.5, justifyContent: 'flex-end' }}>
+          <Button
+            variant="text"
+            onClick={() => setDeleteConfirmOpen(false)}
+            sx={{ color: 'text.secondary', textTransform: 'none', fontWeight: 600 }}
+          >
+            Cancel
+          </Button>
+          <Button
+            variant="contained"
+            color="error"
+            onClick={handleDeleteRoom}
+            sx={{
+              backgroundColor: '#DC2626',
+              '&:hover': { backgroundColor: '#B91C1C' },
+              borderRadius: '8px',
+              textTransform: 'none',
+              fontWeight: 600,
+            }}
+          >
+            Delete
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Snackbar feedback */}
+      <Snackbar
+        open={snackbar.open}
+        autoHideDuration={4000}
+        onClose={() => setSnackbar(prev => ({ ...prev, open: false }))}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+      >
+        <Alert severity={snackbar.severity} variant="filled" sx={{ width: '100%' }}>
+          {snackbar.message}
+        </Alert>
+      </Snackbar>
     </>
   );
 }

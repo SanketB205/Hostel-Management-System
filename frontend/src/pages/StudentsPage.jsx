@@ -11,6 +11,7 @@ import { useRoomContext } from '../contexts/RoomContext';
 export default function StudentsPage() {
   const { user } = useAuth();
   const isRector = user?.role === 'rector';
+  const isAdmin  = user?.role === 'admin';
   const { blocks } = useRoomContext();   // for block filter dropdown
 
   const [studentList, setStudentList] = useState([]);
@@ -193,6 +194,7 @@ export default function StudentsPage() {
           <StudentTable
             students={filteredStudents}
             isRector={isRector}
+            isAdmin={isAdmin}
             onStatusChange={handleStatusChange}
           />
         </>

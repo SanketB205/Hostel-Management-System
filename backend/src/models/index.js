@@ -5,6 +5,9 @@ export { Room } from './Room.js';
 export { Student } from './Student.js';
 export { BedAllocation } from './BedAllocation.js';
 export { Staff } from './Staff.js';
+export { Complaint } from './Complaint.js';
+export { ComplaintTimeline } from './ComplaintTimeline.js';
+export { StudentAttendance } from './StudentAttendance.js';
 
 import { User } from './User.js';
 import { HostelBlock } from './HostelBlock.js';
@@ -13,6 +16,9 @@ import { Room } from './Room.js';
 import { Student } from './Student.js';
 import { BedAllocation } from './BedAllocation.js';
 import { Staff } from './Staff.js';
+import { Complaint } from './Complaint.js';
+import { ComplaintTimeline } from './ComplaintTimeline.js';
+import { StudentAttendance } from './StudentAttendance.js';
 
 HostelBlock.hasMany(Floor, { foreignKey: 'blockId', as: 'floors', onDelete: 'CASCADE' });
 Floor.belongsTo(HostelBlock, { foreignKey: 'blockId', as: 'block' });
@@ -26,3 +32,17 @@ Room.hasMany(BedAllocation, { foreignKey: 'roomId', as: 'allocations' });
 BedAllocation.belongsTo(Room, { foreignKey: 'roomId', as: 'room' });
 User.hasOne(Staff, { foreignKey: 'userId', as: 'staff' });
 Staff.belongsTo(User, { foreignKey: 'userId', as: 'user' });
+
+// Complaint associations
+Student.hasMany(Complaint, { foreignKey: 'studentId', as: 'complaints', onDelete: 'CASCADE' });
+Complaint.belongsTo(Student, { foreignKey: 'studentId', as: 'student' });
+Staff.hasMany(Complaint, { foreignKey: 'assignedToId', as: 'assignedComplaints' });
+Complaint.belongsTo(Staff, { foreignKey: 'assignedToId', as: 'assignedTo' });
+Staff.hasMany(Complaint, { foreignKey: 'resolvedById', as: 'resolvedComplaints' });
+Complaint.belongsTo(Staff, { foreignKey: 'resolvedById', as: 'resolvedBy' });
+Complaint.hasMany(ComplaintTimeline, { foreignKey: 'complaintId', as: 'timeline', onDelete: 'CASCADE' });
+ComplaintTimeline.belongsTo(Complaint, { foreignKey: 'complaintId', as: 'complaint' });
+
+// Attendance associations
+Student.hasMany(StudentAttendance, { foreignKey: 'studentId', as: 'attendances', onDelete: 'CASCADE' });
+StudentAttendance.belongsTo(Student, { foreignKey: 'studentId', as: 'student' });

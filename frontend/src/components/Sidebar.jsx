@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
+import { complaints } from '../api';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { 
   Box, 
@@ -36,7 +37,7 @@ const SIDEBAR_ITEMS = [
   { title: 'Students', path: '/students', icon: Users },
   { title: 'Rooms', path: '/rooms', icon: Bed },
   { title: 'Staff', path: '/staff', icon: UserCheck },
-  { title: 'Complaints', path: '/complaints', icon: Bell, badge: 5 },
+  { title: 'Complaints', path: '/complaints', icon: Bell },
   { group: 'Management' },
   { 
     title: 'Attendance', 
@@ -69,6 +70,40 @@ export default function Sidebar({ mobileOpen, handleDrawerToggle }) {
   const { logout, user } = useAuth();
   const role = user?.role;
 
+  const [complaintCount, setComplaintCount] = useState(0);
+
+  useEffect(() => {
+    if (!user) return;
+
+    let active = true;
+    const fetchCount = async () => {
+      try {
+        if (user.role === 'student') {
+          // Student: count ALL own complaints (not just pending)
+          const res = await complaints.listMine();
+          if (active) setComplaintCount((res.data || []).length);
+        } else if (user.role === 'rector') {
+          // Rector: count ALL student complaints (not just pending)
+          const res = await complaints.listAll({ creatorRole: 'student' });
+          if (active) setComplaintCount((res.data || []).length);
+        } else if (user.role === 'admin') {
+          // Admin: count ALL complaints from both students AND rectors
+          const res = await complaints.listAll(); // No creatorRole filter = get all
+          if (active) setComplaintCount((res.data || []).length);
+        }
+      } catch (err) {
+        console.error('Failed to fetch complaint count:', err);
+      }
+    };
+
+    fetchCount();
+    const interval = setInterval(fetchCount, 30000);
+    return () => {
+      active = false;
+      clearInterval(interval);
+    };
+  }, [user]);
+
   const filteredSidebarItems = React.useMemo(() => {
     return SIDEBAR_ITEMS.map(item => {
       if (item.children) {
@@ -76,15 +111,20 @@ export default function Sidebar({ mobileOpen, handleDrawerToggle }) {
           if (role === 'student') {
             if (child.path === '/attendance/staff') return false;
           }
+          if (role === 'rector') {
+            if (child.path === '/attendance/staff') return false;
+          }
           return true;
         });
         if (filteredChildren.length === 0) return null;
         return { ...item, children: filteredChildren };
       }
-      
+
+      // Hide students/staff pages from student role
       if (role === 'student') {
         if (item.path === '/students' || item.path === '/staff') return null;
       }
+
       return item;
     }).filter(Boolean);
   }, [role]);
@@ -287,7 +327,21 @@ export default function Sidebar({ mobileOpen, handleDrawerToggle }) {
                     }
                   }} 
                 />
-                {item.badge && (
+                {item.title === 'Complaints' ? (
+                  complaintCount > 0 && (
+                    <Chip 
+                      label={complaintCount} 
+                      size="small" 
+                      sx={{ 
+                        height: 20, 
+                        backgroundColor: '#EF4444', 
+                        color: 'white', 
+                        fontWeight: 700,
+                        fontSize: '0.75rem'
+                      }} 
+                    />
+                  )
+                ) : item.badge ? (
                   <Chip 
                     label={item.badge} 
                     size="small" 
@@ -299,7 +353,7 @@ export default function Sidebar({ mobileOpen, handleDrawerToggle }) {
                       fontSize: '0.75rem'
                     }} 
                   />
-                )}
+                ) : null}
               </ListItemButton>
             </ListItem>
           );

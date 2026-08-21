@@ -3,13 +3,15 @@ import { useParams, useNavigate } from 'react-router-dom';
 import {
   Box, Typography, IconButton, Button,
   useTheme, styled, Card, CardContent,
-  Avatar, Chip, CircularProgress, Alert, Snackbar
+  Avatar, Chip, CircularProgress, Alert, Snackbar,
+  Dialog, DialogTitle, DialogContent, DialogContentText, DialogActions
 } from '@mui/material';
 import {
   ArrowLeft, User, GraduationCap, Users,
-  Home, CreditCard, FileText, Edit, Printer, Download, KeyRound
+  Home, CreditCard, FileText, Edit, Printer, Download, KeyRound, Trash2
 } from 'lucide-react';
 import { students as studentsApi } from '../api';
+import { useAuth } from '../contexts/AuthContext';
 
 // ── Styled helpers ─────────────────────────────────────────────────────────────
 
@@ -115,12 +117,18 @@ export default function ViewStudentDetailsPage() {
   const theme = useTheme();
   const navigate = useNavigate();
   const { id } = useParams();
+  const { user } = useAuth();
+
+  // Only admins can remove students or reset passwords / edit
+  const isAdmin = user?.role === 'admin';
 
   const [student, setStudent] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError]   = useState(null);
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
   const [resetting, setResetting] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const handleResetPassword = async () => {
     setResetting(true);
@@ -131,6 +139,22 @@ export default function ViewStudentDetailsPage() {
       setSnackbar({ open: true, message: err.message || 'Failed to reset password.', severity: 'error' });
     } finally {
       setResetting(false);
+    }
+  };
+
+  const handleDeleteStudent = async () => {
+    setDeleting(true);
+    try {
+      const res = await studentsApi.delete(id);
+      setSnackbar({ open: true, message: res.message || 'Student removed successfully.', severity: 'success' });
+      setTimeout(() => {
+        navigate('/students');
+      }, 1500);
+    } catch (err) {
+      setSnackbar({ open: true, message: err.message || 'Failed to remove student.', severity: 'error' });
+    } finally {
+      setDeleting(false);
+      setDeleteOpen(false);
     }
   };
 
@@ -183,16 +207,37 @@ export default function ViewStudentDetailsPage() {
       <PageContainer>
 
         {/* Header */}
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 1 }}>
-          <IconButton onClick={() => navigate(-1)} sx={{ backgroundColor: 'action.hover' }}>
-            <ArrowLeft size={20} />
-          </IconButton>
-          <Box>
-            <Typography variant="h4" sx={{ fontWeight: 800, color: 'text.primary' }}>Student Details</Typography>
-            <Typography variant="body1" sx={{ color: 'text.secondary', mt: 0.5 }}>
-              View complete information about the selected student.
-            </Typography>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1, flexWrap: 'wrap', gap: 2 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+            <IconButton onClick={() => navigate(-1)} sx={{ backgroundColor: 'action.hover' }}>
+              <ArrowLeft size={20} />
+            </IconButton>
+            <Box>
+              <Typography variant="h4" sx={{ fontWeight: 800, color: 'text.primary' }}>Student Details</Typography>
+              <Typography variant="body1" sx={{ color: 'text.secondary', mt: 0.5 }}>
+                View complete information about the selected student.
+              </Typography>
+            </Box>
           </Box>
+          {isAdmin && (
+            <Button
+              variant="contained"
+              color="error"
+              startIcon={<Trash2 size={18} />}
+              onClick={() => setDeleteOpen(true)}
+              sx={{
+                backgroundColor: '#DC2626',
+                '&:hover': { backgroundColor: '#B91C1C' },
+                borderRadius: '8px',
+                textTransform: 'none',
+                fontWeight: 600,
+                px: 3,
+                py: 1
+              }}
+            >
+              Remove Student
+            </Button>
+          )}
         </Box>
 
         {/* ── SECTION 1: Personal Information ── */}
@@ -355,20 +400,22 @@ export default function ViewStudentDetailsPage() {
         </Button>
 
         <Box sx={{ display: 'flex', gap: 2 }}>
-          <Button
-            variant="outlined"
-            startIcon={resetting ? <CircularProgress size={16} /> : <KeyRound size={18} />}
-            disabled={resetting}
-            onClick={handleResetPassword}
-            sx={{
-              display: { xs: 'none', sm: 'flex' }, px: 3, py: 1,
-              color: '#D97706',
-              borderColor: '#D97706',
-              '&:hover': { backgroundColor: 'rgba(217,119,6,0.08)', borderColor: '#D97706' },
-            }}
-          >
-            {resetting ? 'Resetting…' : 'Reset Password'}
-          </Button>
+          {isAdmin && (
+            <Button
+              variant="outlined"
+              startIcon={resetting ? <CircularProgress size={16} /> : <KeyRound size={18} />}
+              disabled={resetting}
+              onClick={handleResetPassword}
+              sx={{
+                display: { xs: 'none', sm: 'flex' }, px: 3, py: 1,
+                color: '#D97706',
+                borderColor: '#D97706',
+                '&:hover': { backgroundColor: 'rgba(217,119,6,0.08)', borderColor: '#D97706' },
+              }}
+            >
+              {resetting ? 'Resetting…' : 'Reset Password'}
+            </Button>
+          )}
           <Button
             variant="outlined"
             startIcon={<Printer size={18} />}
@@ -389,16 +436,19 @@ export default function ViewStudentDetailsPage() {
           >
             Download PDF
           </Button>
-          <Button
-            variant="contained"
-            startIcon={<Edit size={18} />}
-            sx={{
-              backgroundColor: '#4F46E5', '&:hover': { backgroundColor: '#4338CA' },
-              px: { xs: 2, sm: 4 }, py: 1, fontWeight: 600,
-            }}
-          >
-            Edit Student
-          </Button>
+          {isAdmin && (
+            <Button
+              variant="contained"
+              startIcon={<Edit size={18} />}
+              onClick={() => navigate(`/students/${id}/edit`)}
+              sx={{
+                backgroundColor: '#4F46E5', '&:hover': { backgroundColor: '#4338CA' },
+                px: { xs: 2, sm: 4 }, py: 1, fontWeight: 600,
+              }}
+            >
+              Edit Student
+            </Button>
+          )}
         </Box>
       </Box>
 
@@ -412,6 +462,55 @@ export default function ViewStudentDetailsPage() {
           {snackbar.message}
         </Alert>
       </Snackbar>
+
+      {isAdmin && (
+        <Dialog
+          open={deleteOpen}
+          onClose={() => !deleting && setDeleteOpen(false)}
+          aria-labelledby="delete-dialog-title"
+          aria-describedby="delete-dialog-description"
+          PaperProps={{
+            sx: {
+              borderRadius: '16px',
+              p: 1
+            }
+          }}
+        >
+          <DialogTitle id="delete-dialog-title" sx={{ fontWeight: 700 }}>
+            Remove Student Profile?
+          </DialogTitle>
+          <DialogContent>
+            <DialogContentText id="delete-dialog-description">
+              Are you sure you want to remove the student <strong>{fullName}</strong> (Reg. No: {student.registrationNumber})? This action will vacate their assigned bed allocation, delete their linked system login account, and remove all student records. This action cannot be undone.
+            </DialogContentText>
+          </DialogContent>
+          <DialogActions sx={{ px: 3, pb: 2 }}>
+            <Button 
+              onClick={() => setDeleteOpen(false)} 
+              disabled={deleting}
+              sx={{ textTransform: 'none', fontWeight: 600, color: 'text.secondary' }}
+            >
+              Cancel
+            </Button>
+            <Button 
+              onClick={handleDeleteStudent} 
+              disabled={deleting}
+              color="error" 
+              variant="contained" 
+              autoFocus
+              sx={{ 
+                backgroundColor: '#DC2626', 
+                '&:hover': { backgroundColor: '#B91C1C' },
+                textTransform: 'none', 
+                fontWeight: 600,
+                boxShadow: 'none'
+              }}
+            >
+              {deleting ? 'Removing...' : 'Remove Student'}
+            </Button>
+          </DialogActions>
+        </Dialog>
+      )}
     </Box>
   );
 }

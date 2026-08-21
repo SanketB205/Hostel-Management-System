@@ -10,6 +10,7 @@ import { hostelRouter } from './routes/hostel.routes.js';
 import { studentsRouter } from './routes/students.routes.js';
 import { staffRouter } from './routes/staff.routes.js';
 import { bootstrapRouter } from './routes/bootstrap.routes.js';
+import { complaintsRouter } from './routes/complaints.routes.js';
 
 export const app = express();
 
@@ -25,6 +26,7 @@ app.use('/api/students', studentsRouter);
 app.use('/api/staff', staffRouter);
 app.use('/api/allocations', allocationsRouter);
 app.use('/api/bootstrap', bootstrapRouter);
+app.use('/api/complaints', complaintsRouter);
 
 app.use(notFound);
 app.use(errorHandler);

@@ -1,4 +1,5 @@
-import React, { useContext } from 'react';
+import React, { useContext, useState, useEffect } from 'react';
+import { complaints } from '../api';
 import { 
   AppBar, 
   Toolbar, 
@@ -18,6 +19,39 @@ export default function Header({ handleDrawerToggle }) {
   const theme = useTheme();
   const colorMode = useContext(ColorModeContext);
   const { user } = useAuth();
+  const [complaintCount, setComplaintCount] = useState(0);
+
+  useEffect(() => {
+    if (!user) return;
+    
+    let active = true;
+    const fetchCount = async () => {
+      try {
+        if (user.role === 'student') {
+          // Student: count ALL own complaints (not just pending)
+          const res = await complaints.listMine();
+          if (active) setComplaintCount((res.data || []).length);
+        } else if (user.role === 'rector') {
+          // Rector: count ALL student complaints (not just pending)
+          const res = await complaints.listAll({ creatorRole: 'student' });
+          if (active) setComplaintCount((res.data || []).length);
+        } else if (user.role === 'admin') {
+          // Admin: count ALL complaints from both students AND rectors
+          const res = await complaints.listAll(); // No creatorRole filter = get all
+          if (active) setComplaintCount((res.data || []).length);
+        }
+      } catch (err) {
+        console.error('Failed to fetch complaint count in Header:', err);
+      }
+    };
+
+    fetchCount();
+    const interval = setInterval(fetchCount, 30000);
+    return () => {
+      active = false;
+      clearInterval(interval);
+    };
+  }, [user]);
 
   const email = user?.email || 'admin@example.com';
   const role = user?.role || 'admin';
@@ -85,7 +119,7 @@ export default function Header({ handleDrawerToggle }) {
               '&:hover': { backgroundColor: 'action.hover' }
             }}
           >
-            <Badge badgeContent={3} color="error" sx={{ '& .MuiBadge-badge': { fontWeight: 700 } }}>
+            <Badge badgeContent={complaintCount} color="error" sx={{ '& .MuiBadge-badge': { fontWeight: 700 } }}>
               <Bell size={20} color={theme.palette.text.secondary} />
             </Badge>
           </IconButton>

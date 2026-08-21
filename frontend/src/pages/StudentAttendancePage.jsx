@@ -12,12 +12,20 @@ import {
   TableHead, 
   TableRow,
   Paper,
-  Chip,
   LinearProgress,
-  ButtonGroup,
+  Tooltip,
+  IconButton,
+  Menu,
+  MenuItem,
+  ListItemIcon,
+  Alert,
   Snackbar,
-  Alert
+  CircularProgress,
+  Chip,
+  ButtonGroup
 } from '@mui/material';
+import { students as studentsApi, bootstrap as bootstrapApi } from '../api';
+import { useAuth } from '../contexts/AuthContext';
 import { 
   Users, 
   CheckCircle2, 
@@ -30,6 +38,7 @@ import {
   Printer, 
   FileText, 
   ExternalLink,
+  RotateCcw,
   LogOut as OutingIcon
 } from 'lucide-react';
 import { LocalizationProvider, DatePicker } from '@mui/x-date-pickers';
@@ -59,145 +68,117 @@ const STATUS_COLORS = {
   Pending: { color: '#64748B', bg: 'rgba(100, 116, 139, 0.1)', dot: '❓' }
 };
 
-// Mock Static Data for Trends & Analytics
+// Static fallbacks for Trends & Analytics initialized to zero/empty
 const WEEKLY_TREND_7D = [
-  { name: 'Mon', Present: 92, Absent: 5, Leave: 3 },
-  { name: 'Tue', Present: 95, Absent: 3, Leave: 2 },
-  { name: 'Wed', Present: 94, Absent: 4, Leave: 2 },
-  { name: 'Thu', Present: 91, Absent: 6, Leave: 3 },
-  { name: 'Fri', Present: 89, Absent: 8, Leave: 3 },
-  { name: 'Sat', Present: 85, Absent: 12, Leave: 3 },
-  { name: 'Sun', Present: 88, Absent: 9, Leave: 3 }
+  { name: 'Mon', Present: 0, Absent: 0, Leave: 0 },
+  { name: 'Tue', Present: 0, Absent: 0, Leave: 0 },
+  { name: 'Wed', Present: 0, Absent: 0, Leave: 0 },
+  { name: 'Thu', Present: 0, Absent: 0, Leave: 0 },
+  { name: 'Fri', Present: 0, Absent: 0, Leave: 0 },
+  { name: 'Sat', Present: 0, Absent: 0, Leave: 0 },
+  { name: 'Sun', Present: 0, Absent: 0, Leave: 0 }
 ];
 
 const WEEKLY_TREND_30D = [
-  { name: 'W1', Present: 91, Absent: 6, Leave: 3 },
-  { name: 'W2', Present: 93, Absent: 4, Leave: 3 },
-  { name: 'W3', Present: 92, Absent: 5, Leave: 3 },
-  { name: 'W4', Present: 94, Absent: 3, Leave: 3 }
+  { name: 'W1', Present: 0, Absent: 0, Leave: 0 },
+  { name: 'W2', Present: 0, Absent: 0, Leave: 0 },
+  { name: 'W3', Present: 0, Absent: 0, Leave: 0 },
+  { name: 'W4', Present: 0, Absent: 0, Leave: 0 }
 ];
 
 const WEEKLY_TREND_TODAY = [
-  { name: '08:00', Present: 85, Absent: 10, Leave: 5 },
-  { name: '10:00', Present: 90, Absent: 7, Leave: 3 },
-  { name: '12:00', Present: 92, Absent: 5, Leave: 3 },
-  { name: '14:00', Present: 94, Absent: 3, Leave: 3 }
+  { name: '08:00', Present: 0, Absent: 0, Leave: 0 },
+  { name: '10:00', Present: 0, Absent: 0, Leave: 0 },
+  { name: '12:00', Present: 0, Absent: 0, Leave: 0 },
+  { name: '14:00', Present: 0, Absent: 0, Leave: 0 }
 ];
 
-const COURSE_ATTENDANCE = [
-  { course: 'Computer Science (CSE)', present: 112, absent: 8, rate: 93 },
-  { course: 'Electronics (ECE)', present: 54, absent: 6, rate: 90 },
-  { course: 'Mechanical (ME)', present: 42, absent: 8, rate: 84 },
-  { course: 'Civil (CE)', present: 22, absent: 6, rate: 78 },
-  { course: 'Business (BBA)', present: 15, absent: 7, rate: 68 }
-];
+const COURSE_ATTENDANCE = [];
 
-const YEAR_ATTENDANCE = [
-  { year: '1st Year', present: 68, absent: 12, rate: 85 },
-  { year: '2nd Year', present: 72, absent: 8, rate: 90 },
-  { year: '3rd Year', present: 64, absent: 6, rate: 91 },
-  { year: '4th Year', present: 41, absent: 9, rate: 82 }
-];
+const YEAR_ATTENDANCE = [];
 
-const BLOCK_ATTENDANCE = [
-  { block: 'Block A', present: 95, absent: 5, rate: 95 },
-  { block: 'Block B', present: 88, absent: 12, rate: 88 },
-  { block: 'Block C', present: 62, absent: 18, rate: 77 }
-];
+const BLOCK_ATTENDANCE = [];
 
-const NEED_ATTENTION_STUDENTS = [
-  { name: 'Rohit Sharma', issue: 'Attendance Below 75%', rate: 68 },
-  { name: 'Priya Verma', issue: '3 Consecutive Absences', rate: 72 },
-  { name: 'Amit Singh', issue: 'Frequent Late Entry', rate: 74 },
-  { name: 'Kunal Sen', issue: 'Long Pending Leave', rate: 64 }
-];
+const NEED_ATTENTION_STUDENTS = [];
 
 const MONTHLY_RATE_DATA = [
-  { name: 'Jan', rate: 92 },
-  { name: 'Feb', rate: 94 },
-  { name: 'Mar', rate: 91 },
-  { name: 'Apr', rate: 93 },
-  { name: 'May', rate: 95 },
-  { name: 'Jun', rate: 89 },
-  { name: 'Jul', rate: 87 },
-  { name: 'Aug', rate: 90 },
-  { name: 'Sep', rate: 92 },
-  { name: 'Oct', rate: 94 },
-  { name: 'Nov', rate: 93 },
-  { name: 'Dec', rate: 95 }
+  { name: 'Jan', rate: 0 },
+  { name: 'Feb', rate: 0 },
+  { name: 'Mar', rate: 0 },
+  { name: 'Apr', rate: 0 },
+  { name: 'May', rate: 0 },
+  { name: 'Jun', rate: 0 },
+  { name: 'Jul', rate: 0 },
+  { name: 'Aug', rate: 0 },
+  { name: 'Sep', rate: 0 },
+  { name: 'Oct', rate: 0 },
+  { name: 'Nov', rate: 0 },
+  { name: 'Dec', rate: 0 }
 ];
 
-const RECENT_ACTIVITIES = [
-  { time: '09:05 AM', name: 'Sanket Bhujbal', status: 'Present' },
-  { time: '09:12 AM', name: 'Emily Doe', status: 'Late' },
-  { time: '09:18 AM', name: 'Rahul Sharma', status: 'Absent' },
-  { time: '09:40 AM', name: 'Priya Patel', status: 'Outing' },
-  { time: '10:02 AM', name: 'Amit Desai', status: 'Present' },
-  { time: '10:15 AM', name: 'Kavya Joshi', status: 'Leave' },
-  { time: '10:30 AM', name: 'Rohan Mehta', status: 'Present' },
-  { time: '11:00 AM', name: 'Neha Verma', status: 'Present' },
-  { time: '11:15 AM', name: 'Vihaan Gupta', status: 'Late' },
-  { time: '11:45 AM', name: 'Aditi Singh', status: 'Absent' }
-];
+const RECENT_ACTIVITIES = [];
 
 export default function StudentAttendancePage() {
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'admin';
+
   const [students, setStudents] = useState([]);
   const [selectedDate, setSelectedDate] = useState(dayjs());
   const [attendance, setAttendance] = useState({});
-  const [trendRange, setTrendRange] = useState('7D');
+  const [analytics, setAnalytics] = useState(null);
+  const [trendRange, setTrendRange] = useState('30D');
+  const [isDateMode, setIsDateMode] = useState(false);
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
+  const [loading, setLoading] = useState(false);
+  const [clearing, setClearing] = useState(false);
 
-  // Load students from localStorage
+  // Load real students and their attendance status for selected date and range
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem('hostel_students');
-      if (saved) {
-        setStudents(JSON.parse(saved));
-      } else {
-        const defaultStudents = [
-          { id: 'STU-1000', name: 'Sanket Bhujbal', regNo: 'CSE23001', room: 'A-101', course: 'CSE', year: '3rd' },
-          { id: 'STU-1001', name: 'Aarav Sharma', regNo: 'ECE23002', room: 'B-202', course: 'ECE', year: '2nd' },
-          { id: 'STU-1002', name: 'Neha Gupta', regNo: 'ME23003', room: 'C-303', course: 'ME', year: '1st' },
-          { id: 'STU-1003', name: 'Amit Singh', regNo: 'CE23004', room: 'A-102', course: 'CE', year: '1st' },
-          { id: 'STU-1004', name: 'Priya Verma', regNo: 'BBA23005', room: 'B-204', course: 'BBA', year: '2nd' },
-          { id: 'STU-1005', name: 'Kunal Sen', regNo: 'CSE23006', room: 'C-102', course: 'CSE', year: '4th' }
-        ];
-        setStudents(defaultStudents);
-        localStorage.setItem('hostel_students', JSON.stringify(defaultStudents));
+    let active = true;
+    const fetchAttendanceData = async () => {
+      setLoading(true);
+      try {
+        const dateStr = selectedDate.format('YYYY-MM-DD');
+        const [studentsRes, analyticsRes] = await Promise.all([
+          studentsApi.list({ date: dateStr }),
+          studentsApi.attendanceAnalytics(dateStr, trendRange)
+        ]);
+        if (active) {
+          const studentList = studentsRes.data || [];
+          setStudents(studentList);
+          
+          const attMap = {};
+          studentList.forEach(s => {
+            attMap[s.id] = s.status || 'Not Marked';
+          });
+          setAttendance(attMap);
+          setAnalytics(analyticsRes.data || null);
+        }
+      } catch (err) {
+        console.error('Failed to fetch attendance data:', err);
+        if (active) {
+          setSnackbar({
+            open: true,
+            message: err.message || 'Failed to load attendance records from database.',
+            severity: 'error'
+          });
+        }
+      } finally {
+        if (active) setLoading(false);
       }
-    } catch (e) {
-      console.error('Failed to load students', e);
-    }
-  }, []);
+    };
 
-  // Load attendance records for selected date
-  useEffect(() => {
-    if (students.length === 0) return;
-    
-    const dateStr = selectedDate.format('YYYY-MM-DD');
-    try {
-      const savedAttendance = localStorage.getItem('hostel_student_attendance_records');
-      const allRecords = savedAttendance ? JSON.parse(savedAttendance) : {};
-      
-      if (allRecords[dateStr]) {
-        setAttendance(allRecords[dateStr]);
-      } else {
-        const newDayAttendance = {};
-        students.forEach(student => {
-          const currentStatus = student.status || 'Present';
-          newDayAttendance[student.id] = ['Present', 'Absent', 'Late', 'Leave', 'Outing'].includes(currentStatus) 
-            ? currentStatus 
-            : 'Present';
-        });
-        setAttendance(newDayAttendance);
-      }
-    } catch (e) {
-      console.error('Failed to load attendance records', e);
-    }
-  }, [selectedDate, students]);
+    fetchAttendanceData();
+    return () => {
+      active = false;
+    };
+  }, [selectedDate, trendRange]);
 
   // Dynamic calculations for all 8 stats cards
   const stats = useMemo(() => {
+    if (analytics?.stats) {
+      return analytics.stats;
+    }
     let present = 0, absent = 0, leave = 0, outing = 0, late = 0, pending = 0;
     students.forEach(student => {
       const status = attendance[student.id];
@@ -214,6 +195,7 @@ export default function StudentAttendancePage() {
 
     return {
       total,
+      totalSlots: total,
       present,
       absent,
       rate,
@@ -222,7 +204,7 @@ export default function StudentAttendancePage() {
       late,
       pending
     };
-  }, [students, attendance]);
+  }, [students, attendance, analytics]);
 
   // Doughnut Chart Data dynamically synced with active states
   const distributionData = useMemo(() => {
@@ -237,15 +219,105 @@ export default function StudentAttendancePage() {
   }, [stats]);
 
   const trendData = useMemo(() => {
+    if (analytics?.weeklyTrend) {
+      return analytics.weeklyTrend[trendRange] || [];
+    }
     if (trendRange === '30D') return WEEKLY_TREND_30D;
     if (trendRange === 'Today') return WEEKLY_TREND_TODAY;
     return WEEKLY_TREND_7D;
-  }, [trendRange]);
+  }, [trendRange, analytics]);
+
+  const courseAttendanceData = useMemo(() => {
+    return analytics?.courseAttendance || COURSE_ATTENDANCE;
+  }, [analytics]);
+
+  const yearAttendanceData = useMemo(() => {
+    return analytics?.yearAttendance || YEAR_ATTENDANCE;
+  }, [analytics]);
+
+  const blockAttendanceData = useMemo(() => {
+    return analytics?.blockAttendance || BLOCK_ATTENDANCE;
+  }, [analytics]);
+
+  const needAttentionStudentsData = useMemo(() => {
+    return analytics?.attentionStudents || NEED_ATTENTION_STUDENTS;
+  }, [analytics]);
+
+  const monthlyRateDataComputed = useMemo(() => {
+    return analytics?.monthlyRates || MONTHLY_RATE_DATA;
+  }, [analytics]);
+
+  const recentActivitiesData = useMemo(() => {
+    return analytics?.recentActivities || RECENT_ACTIVITIES;
+  }, [analytics]);
 
   return (
     <LocalizationProvider dateAdapter={AdapterDayjs}>
       <Box sx={{ animation: 'fadeIn 0.5s ease-out', pb: 4, width: '100%', display: 'block' }}>
         
+        {/* Custom Range Filter Button Group (capsule styled) */}
+        <Box sx={{ display: 'flex', justifyContent: 'flex-start', mb: 3 }}>
+          <ButtonGroup 
+            variant="outlined" 
+            sx={{ 
+              borderRadius: '50px',
+              backgroundColor: 'background.paper',
+              boxShadow: '0 2px 4px rgba(0,0,0,0.05)',
+              '& .MuiButton-root': {
+                border: '1px solid #4F46E5 !important',
+                textTransform: 'none',
+                fontWeight: 600,
+                px: { xs: 2.5, sm: 4 },
+                py: 1,
+                fontSize: '0.95rem',
+                borderColor: '#4F46E5 !important',
+                transition: 'all 0.2s',
+              },
+              '& .MuiButton-root:first-of-type': {
+                borderTopLeftRadius: '50px',
+                borderBottomLeftRadius: '50px',
+              },
+              '& .MuiButton-root:last-of-type': {
+                borderTopRightRadius: '50px',
+                borderBottomRightRadius: '50px',
+              },
+              '& .MuiButton-root:not(:first-of-type)': {
+                marginLeft: '-1px !important',
+              }
+            }}
+          >
+            <Button
+               onClick={() => { setTrendRange('Today'); setIsDateMode(false); setSelectedDate(dayjs()); }}
+               sx={{
+                 backgroundColor: trendRange === 'Today' ? '#4F46E5 !important' : 'transparent',
+                 color: trendRange === 'Today' ? '#ffffff !important' : '#4F46E5',
+               }}
+             >
+               Today
+             </Button>
+             <Button
+               onClick={() => { setTrendRange('7D'); setIsDateMode(false); setSelectedDate(dayjs()); }}
+               disabled={isDateMode}
+               sx={{
+                 backgroundColor: trendRange === '7D' ? '#4F46E5 !important' : 'transparent',
+                 color: trendRange === '7D' ? '#ffffff !important' : '#4F46E5',
+               }}
+             >
+               Last 7 Days
+             </Button>
+             <Button
+               onClick={() => { setTrendRange('30D'); setIsDateMode(false); setSelectedDate(dayjs()); }}
+               disabled={isDateMode}
+               sx={{
+                 backgroundColor: trendRange === '30D' ? '#4F46E5 !important' : 'transparent',
+                 color: trendRange === '30D' ? '#ffffff !important' : '#4F46E5',
+               }}
+             >
+               Last 30 Days
+             </Button>
+          </ButtonGroup>
+        </Box>
+
         {/* PAGE HEADER */}
         <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' }, justifyContent: 'space-between', alignItems: { xs: 'flex-start', md: 'center' }, gap: 2, mb: '32px' }}>
           <Box>
@@ -258,18 +330,22 @@ export default function StudentAttendancePage() {
           </Box>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, width: { xs: '100%', md: 'auto' } }}>
             <DatePicker
-              label="Select Date"
-              value={selectedDate}
-              onChange={(newDate) => {
-                if (newDate) setSelectedDate(newDate);
-              }}
-              slotProps={{ 
-                textField: { 
-                  size: 'small', 
-                  sx: { backgroundColor: 'background.paper', borderRadius: 2 } 
-                } 
-              }}
-            />
+               label="Select Date"
+               value={selectedDate}
+               onChange={(newDate) => {
+                 if (newDate) {
+                   setSelectedDate(newDate);
+                   setTrendRange('Today');
+                   setIsDateMode(true);
+                 }
+               }}
+                slotProps={{ 
+                  textField: { 
+                    size: 'small',
+                    sx: { backgroundColor: 'background.paper', borderRadius: 2 } 
+                  } 
+                }}
+             />
             <Button
               variant="contained"
               startIcon={<Download size={18} />}
@@ -299,8 +375,8 @@ export default function StudentAttendancePage() {
         >
           {[
             { label: 'Total Students', value: stats.total, subtitle: 'Registered Students', icon: Users, color: '#4F46E5', bg: 'rgba(79, 70, 229, 0.1)' },
-            { label: 'Present Today', value: stats.present, subtitle: 'Students Marked Present', icon: CheckCircle2, color: '#16A34A', bg: 'rgba(34, 197, 94, 0.1)' },
-            { label: 'Absent Today', value: stats.absent, subtitle: 'Students Marked Absent', icon: XCircle, color: '#DC2626', bg: 'rgba(239, 68, 68, 0.1)' },
+            { label: 'Total Present', value: stats.present, subtitle: 'Students Marked Present', icon: CheckCircle2, color: '#16A34A', bg: 'rgba(34, 197, 94, 0.1)' },
+            { label: 'Total Absent', value: stats.absent, subtitle: 'Students Marked Absent', icon: XCircle, color: '#DC2626', bg: 'rgba(239, 68, 68, 0.1)' },
             { label: 'Attendance Rate', value: `${stats.rate}%`, subtitle: 'Overall Attendance %', icon: TrendingUp, color: '#8B5CF6', bg: 'rgba(139, 92, 246, 0.1)' },
             { label: 'On Leave', value: stats.leave, subtitle: 'Approved Leave', icon: Plane, color: '#2563EB', bg: 'rgba(37, 99, 235, 0.1)' },
             { label: 'Outing', value: stats.outing, subtitle: 'Temporary Exit', icon: OutingIcon, color: '#F59E0B', bg: 'rgba(245, 158, 11, 0.1)' },
@@ -374,31 +450,8 @@ export default function StudentAttendancePage() {
           <Card sx={{ p: 3, height: '100%', display: 'flex', flexDirection: 'column', borderRadius: '16px' }}>
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3, flexWrap: 'wrap', gap: 1.5 }}>
               <Typography variant="h6" sx={{ fontWeight: 600 }}>
-                Weekly Attendance Trend (%)
+                {trendRange === 'Today' ? 'Today Attendance Trend (%)' : trendRange === '7D' ? 'Weekly Attendance Trend (%)' : 'Last 30 Days Attendance Trend (%)'}
               </Typography>
-              <ButtonGroup size="small">
-                <Button 
-                  variant={trendRange === 'Today' ? 'contained' : 'outlined'} 
-                  onClick={() => setTrendRange('Today')}
-                  sx={{ textTransform: 'none', borderRadius: 2, backgroundColor: trendRange === 'Today' ? '#4F46E5' : 'transparent' }}
-                >
-                  Today
-                </Button>
-                <Button 
-                  variant={trendRange === '7D' ? 'contained' : 'outlined'} 
-                  onClick={() => setTrendRange('7D')}
-                  sx={{ textTransform: 'none', backgroundColor: trendRange === '7D' ? '#4F46E5' : 'transparent' }}
-                >
-                  Last 7 Days
-                </Button>
-                <Button 
-                  variant={trendRange === '30D' ? 'contained' : 'outlined'} 
-                  onClick={() => setTrendRange('30D')}
-                  sx={{ textTransform: 'none', borderRadius: 2, backgroundColor: trendRange === '30D' ? '#4F46E5' : 'transparent' }}
-                >
-                  Last 30 Days
-                </Button>
-              </ButtonGroup>
             </Box>
             <Box sx={{ flex: 1, minHeight: 320 }}>
               <ResponsiveContainer width="100%" height={320}>
@@ -457,22 +510,25 @@ export default function StudentAttendancePage() {
                 }}
               >
                 <Typography variant="h4" sx={{ fontWeight: 700, color: 'text.primary', lineHeight: 1 }}>
-                  {stats.total}
+                  {distributionData.reduce((sum, item) => sum + item.value, 0)}
                 </Typography>
                 <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600 }}>
-                  Students Today
+                  {trendRange === 'Today' ? 'Students Today' : trendRange === '7D' ? 'Total (7 Days)' : 'Total (30 Days)'}
                 </Typography>
               </Box>
             </Box>
             <Box sx={{ display: 'flex', justifyContent: 'center', gap: 2, flexWrap: 'wrap', mt: 2 }}>
-              {distributionData.map((item, idx) => (
-                <Box key={idx} sx={{ display: 'flex', alignItems: 'center', gap: 0.8 }}>
-                  <Box sx={{ width: 10, height: 10, borderRadius: '50%', backgroundColor: item.color }} />
-                  <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600 }}>
-                    {item.name}: {item.value} ({stats.total > 0 ? Math.round((item.value / stats.total) * 100) : 0}%)
-                  </Typography>
-                </Box>
-              ))}
+              {distributionData.map((item, idx) => {
+                const totalDistVal = distributionData.reduce((sum, item) => sum + item.value, 0);
+                return (
+                  <Box key={idx} sx={{ display: 'flex', alignItems: 'center', gap: 0.8 }}>
+                    <Box sx={{ width: 10, height: 10, borderRadius: '50%', backgroundColor: item.color }} />
+                    <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600 }}>
+                      {item.name}: {item.value} ({totalDistVal > 0 ? Math.round((item.value / totalDistVal) * 100) : 0}%)
+                    </Typography>
+                  </Box>
+                );
+              })}
             </Box>
           </Card>
         </Box>
@@ -503,7 +559,7 @@ export default function StudentAttendancePage() {
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {COURSE_ATTENDANCE.map((row, idx) => (
+                  {courseAttendanceData.map((row, idx) => (
                     <TableRow key={idx} hover sx={{ '&:last-child td': { borderBottom: 0 } }}>
                       <TableCell sx={{ fontWeight: 500 }}>{row.course}</TableCell>
                       <TableCell sx={{ textAlign: 'center', color: '#16A34A', fontWeight: 600 }}>{row.present}</TableCell>
@@ -546,7 +602,7 @@ export default function StudentAttendancePage() {
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {YEAR_ATTENDANCE.map((row, idx) => (
+                  {yearAttendanceData.map((row, idx) => (
                     <TableRow key={idx} hover sx={{ '&:last-child td': { borderBottom: 0 } }}>
                       <TableCell sx={{ fontWeight: 500 }}>{row.year}</TableCell>
                       <TableCell sx={{ textAlign: 'center', color: '#16A34A', fontWeight: 600 }}>{row.present}</TableCell>
@@ -600,7 +656,7 @@ export default function StudentAttendancePage() {
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {BLOCK_ATTENDANCE.map((row, idx) => (
+                  {blockAttendanceData.map((row, idx) => (
                     <TableRow key={idx} hover sx={{ '&:last-child td': { borderBottom: 0 } }}>
                       <TableCell sx={{ fontWeight: 500 }}>{row.block}</TableCell>
                       <TableCell sx={{ textAlign: 'center', color: '#16A34A', fontWeight: 600 }}>{row.present}</TableCell>
@@ -652,7 +708,7 @@ export default function StudentAttendancePage() {
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {NEED_ATTENTION_STUDENTS.map((row, idx) => (
+                  {needAttentionStudentsData.map((row, idx) => (
                     <TableRow key={idx} hover sx={{ '&:last-child td': { borderBottom: 0 } }}>
                       <TableCell sx={{ fontWeight: 600 }}>{row.name}</TableCell>
                       <TableCell sx={{ color: 'text.secondary', fontWeight: 500, fontSize: '0.85rem' }}>{row.issue}</TableCell>
@@ -684,7 +740,7 @@ export default function StudentAttendancePage() {
             </Typography>
             <Box sx={{ flex: 1, minHeight: 320 }}>
               <ResponsiveContainer width="100%" height={320}>
-                <BarChart data={MONTHLY_RATE_DATA} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                <BarChart data={monthlyRateDataComputed} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E2E8F0" />
                   <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#64748B', fontSize: 12 }} />
                   <YAxis axisLine={false} tickLine={false} tick={{ fill: '#64748B', fontSize: 12 }} domain={[60, 100]} />
@@ -709,8 +765,8 @@ export default function StudentAttendancePage() {
             
             {/* Timeline Layout */}
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.8, flex: 1, overflowY: 'auto', minHeight: 320, maxHeight: 320 }}>
-              {RECENT_ACTIVITIES.map((activity, idx) => (
-                <Box key={idx} sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', pb: 1, borderBottom: idx !== RECENT_ACTIVITIES.length - 1 ? '1px solid' : 'none', borderColor: 'divider' }}>
+              {recentActivitiesData.map((activity, idx) => (
+                <Box key={idx} sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', pb: 1, borderBottom: idx !== recentActivitiesData.length - 1 ? '1px solid' : 'none', borderColor: 'divider' }}>
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                     <Typography variant="caption" sx={{ fontWeight: 600, color: 'text.secondary', minWidth: 65 }}>
                       {activity.time}

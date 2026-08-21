@@ -93,3 +93,10 @@ export const createStaff = asyncHandler(async (req, res) => {
 
   res.status(201).json({ data: result });
 });
+
+export const getStaff = asyncHandler(async (req, res) => {
+  const staffMember = await Staff.findByPk(req.params.id);
+  if (!staffMember) return res.status(404).json({ message: 'Staff member not found.' });
+  res.json({ data: staffMember });
+});
+
