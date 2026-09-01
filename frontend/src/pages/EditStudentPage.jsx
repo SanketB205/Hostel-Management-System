@@ -203,9 +203,9 @@ export default function EditStudentPage() {
             bedNumber: activeAlloc?.bedNumber || '',
             allocationDate: activeAlloc?.allocatedAt ? dayjs(activeAlloc.allocatedAt) : null,
             status: s.status || 'Present',
-            totalFees: '',
-            initialDeposit: '',
-            paymentStatus: 'Pending'
+            totalFees: s.totalFees !== null && s.totalFees !== undefined ? s.totalFees : '',
+            initialDeposit: s.initialDeposit !== null && s.initialDeposit !== undefined ? s.initialDeposit : '',
+            paymentStatus: s.paymentStatus || 'Pending'
           });
         }
       } catch (err) {
@@ -352,6 +352,9 @@ export default function EditStudentPage() {
         guardianPhone:        data.parentPhone,
         guardianEmail:        data.parentEmail || null,
         status:               data.status,
+        totalFees:            data.totalFees !== '' && data.totalFees !== null && data.totalFees !== undefined ? Number(data.totalFees) : null,
+        initialDeposit:       data.initialDeposit !== '' && data.initialDeposit !== null && data.initialDeposit !== undefined ? Number(data.initialDeposit) : null,
+        paymentStatus:        data.paymentStatus || 'Pending',
         allocation: {
           roomNumber:  data.roomNumber,
           bedNumber:   data.bedNumber,

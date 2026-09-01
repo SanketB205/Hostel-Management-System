@@ -8,6 +8,7 @@ export { Staff } from './Staff.js';
 export { Complaint } from './Complaint.js';
 export { ComplaintTimeline } from './ComplaintTimeline.js';
 export { StudentAttendance } from './StudentAttendance.js';
+export { Payment } from './Payment.js';
 
 import { User } from './User.js';
 import { HostelBlock } from './HostelBlock.js';
@@ -19,6 +20,7 @@ import { Staff } from './Staff.js';
 import { Complaint } from './Complaint.js';
 import { ComplaintTimeline } from './ComplaintTimeline.js';
 import { StudentAttendance } from './StudentAttendance.js';
+import { Payment } from './Payment.js';
 
 HostelBlock.hasMany(Floor, { foreignKey: 'blockId', as: 'floors', onDelete: 'CASCADE' });
 Floor.belongsTo(HostelBlock, { foreignKey: 'blockId', as: 'block' });
@@ -46,3 +48,7 @@ ComplaintTimeline.belongsTo(Complaint, { foreignKey: 'complaintId', as: 'complai
 // Attendance associations
 Student.hasMany(StudentAttendance, { foreignKey: 'studentId', as: 'attendances', onDelete: 'CASCADE' });
 StudentAttendance.belongsTo(Student, { foreignKey: 'studentId', as: 'student' });
+
+// Payment associations
+Student.hasMany(Payment, { foreignKey: 'studentId', as: 'payments', onDelete: 'CASCADE' });
+Payment.belongsTo(Student, { foreignKey: 'studentId', as: 'student' });

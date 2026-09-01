@@ -23,4 +23,8 @@ export const env = {
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || '8h',
   seedAdminEmail: process.env.SEED_ADMIN_EMAIL || 'admin123@gmail.com',
   seedAdminPassword: process.env.SEED_ADMIN_PASSWORD || 'admin@123',
+  razorpay: {
+    key: process.env.RAZORPAY_KEY || 'rzp_test_0ijlExrPtiV5Hx',
+    secret: process.env.RAZORPAY_SECRET || 'tBTrl2I6ytXaaxcM0Se19X5j',
+  },
 };

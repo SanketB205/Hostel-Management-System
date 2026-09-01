@@ -21,9 +21,15 @@ export const login = asyncHandler(async (req, res) => {
   user.lastLoginAt = new Date();
   await user.save();
 
+  let studentId = null;
+  if (user.role === 'student') {
+    const student = await Student.findOne({ where: { userId: user.id } });
+    if (student) studentId = student.id;
+  }
+
   return res.json({
     token: createToken(user),
-    user: { id: user.id, email: user.email, role: user.role },
+    user: { id: user.id, email: user.email, role: user.role, studentId },
   });
 });
 
@@ -36,6 +42,7 @@ export const me = asyncHandler(async (req, res) => {
     const student = await Student.findOne({ where: { userId: id } });
     if (student) {
       profile = {
+        studentId: student.id,
         name: `${student.firstName} ${student.lastName}`,
         phone: student.phone || null,
         username: student.registrationNumber,

@@ -15,6 +15,21 @@ async function startServer() {
     } catch (err) {
       console.warn('Failed to alter enums:', err.message);
     }
+    try {
+      await sequelize.query("ALTER TABLE students ADD COLUMN total_fees INT NULL");
+    } catch (err) {
+      console.warn('Failed to add total_fees column:', err.message);
+    }
+    try {
+      await sequelize.query("ALTER TABLE students ADD COLUMN initial_deposit INT NULL");
+    } catch (err) {
+      console.warn('Failed to add initial_deposit column:', err.message);
+    }
+    try {
+      await sequelize.query("ALTER TABLE students ADD COLUMN payment_status ENUM('Paid', 'Partial', 'Pending') NOT NULL DEFAULT 'Pending'");
+    } catch (err) {
+      console.warn('Failed to add payment_status column:', err.message);
+    }
     await seedAdmin();
 
     app.listen(env.port, () => {

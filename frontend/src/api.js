@@ -91,6 +91,8 @@ export const students = {
     return request('GET', url);
   },
   delete: (id) => request('DELETE', `/students/${id}`),
+  createPaymentOrder: (id, amount) => request('POST', `/students/${id}/payment/order`, { amount }),
+  verifyPayment: (id, payload) => request('POST', `/students/${id}/payment/verify`, payload),
 };
 
 // ── Allocations ───────────────────────────────────────────────────────────────

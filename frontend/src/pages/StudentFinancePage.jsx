@@ -1,10 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Box, Typography, Card, Chip, Button, Drawer, IconButton,
   useTheme, styled, Radio, RadioGroup, FormControlLabel, FormControl,
   Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
-  TablePagination, Divider, Modal, Backdrop,
+  TablePagination, Divider, Modal, Backdrop, CircularProgress,
 } from '@mui/material';
+import { useAuth } from '../contexts/AuthContext';
+import { students as studentsApi } from '../api';
 import {
   IndianRupee, CheckCircle2, Clock, Calendar, CreditCard, X, Eye, Receipt, ArrowLeft
 } from 'lucide-react';
@@ -143,8 +145,9 @@ function PaymentDueSection({ data, onPayNow }) {
   const theme = useTheme();
   
   const isPaid = data.pending === 0;
-  const statusColor = isPaid ? '#16A34A' : data.status === 'Partial' ? '#F59E0B' : '#DC2626';
-  const statusBg = isPaid ? 'rgba(22,163,74,0.1)' : data.status === 'Partial' ? 'rgba(245,158,11,0.1)' : 'rgba(220,38,38,0.1)';
+  const isNotPaid = data.paid === 0;
+  const statusColor = isPaid ? '#16A34A' : isNotPaid ? '#DC2626' : data.status === 'Partial' ? '#F59E0B' : '#DC2626';
+  const statusBg = isPaid ? 'rgba(22,163,74,0.1)' : isNotPaid ? 'rgba(220,38,38,0.1)' : data.status === 'Partial' ? 'rgba(245,158,11,0.1)' : 'rgba(220,38,38,0.1)';
 
   return (
     <SectionCard sx={{ mb: 4 }}>
@@ -217,7 +220,7 @@ function PaymentDueSection({ data, onPayNow }) {
               Status
             </Typography>
             <Chip 
-              label={isPaid ? 'Paid' : data.status}
+              label={isPaid ? 'Paid' : isNotPaid ? 'Not paid' : data.status}
               size="small"
               sx={{ 
                 fontWeight: 600, 
@@ -950,20 +953,178 @@ function ReceiptDetailsDrawer({ open, onClose, receipt, studentData }) {
 
 // ─── Main Page ─────────────────────────────────────────────────────────────────
 export default function StudentFinancePage() {
+  const { user } = useAuth();
+  const [studentData, setStudentData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
   const [paymentSelectionOpen, setPaymentSelectionOpen] = useState(false);
   const [qrPaymentOpen, setQRPaymentOpen] = useState(false);
   const [receiptDrawerOpen, setReceiptDrawerOpen] = useState(false);
   const [selectedReceipt, setSelectedReceipt] = useState(null);
   const [selectedAmount, setSelectedAmount] = useState(0);
 
+  useEffect(() => {
+    const script = document.createElement('script');
+    script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+    script.async = true;
+    document.body.appendChild(script);
+    return () => {
+      document.body.removeChild(script);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!user || !user.studentId) {
+      setLoading(false);
+      setError('Student profile not associated with this account or not found.');
+      return;
+    }
+
+    let active = true;
+    const fetchStudentFinance = async () => {
+      try {
+        const res = await studentsApi.getById(user.studentId);
+        if (active) {
+          const s = res.data;
+          setStudentData({
+            studentName: `${s.firstName} ${s.lastName}`,
+            registrationNo: s.registrationNumber,
+            academicYear: '2026-27',
+            feeType: 'Hostel Fee',
+            totalFee: s.totalFees || 0,
+            paid: s.initialDeposit || 0,
+            pending: Math.max(0, (s.totalFees || 0) - (s.initialDeposit || 0)),
+            dueDate: '30 Sep 2026',
+            status: s.paymentStatus || 'Pending',
+            paymentHistory: s.payments && s.payments.length > 0
+              ? s.payments.map(p => ({
+                  receiptNo: p.receiptNo,
+                  date: new Date(p.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
+                  amount: p.amount,
+                  paymentMode: p.paymentMode,
+                  status: p.status,
+                  transactionId: p.transactionId || '—',
+                }))
+              : (s.initialDeposit > 0
+                  ? [{
+                      receiptNo: 'REC_INIT',
+                      date: new Date(s.createdAt || Date.now()).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
+                      amount: s.initialDeposit,
+                      paymentMode: 'Deposit',
+                      status: 'Success',
+                      transactionId: 'INIT_DEP',
+                    }]
+                  : []
+                ),
+          });
+        }
+      } catch (err) {
+        console.error('Failed to load student finance details:', err);
+        if (active) {
+          setError(err.message || 'Failed to load finance details.');
+        }
+      } finally {
+        if (active) {
+          setLoading(false);
+        }
+      }
+    };
+
+    fetchStudentFinance();
+    return () => { active = false; };
+  }, [user]);
+
   const handlePayNow = () => {
     setPaymentSelectionOpen(true);
   };
 
-  const handleContinueToPayment = (amount) => {
-    setSelectedAmount(amount);
+  const handleContinueToPayment = async (amount) => {
     setPaymentSelectionOpen(false);
-    setQRPaymentOpen(true);
+    setLoading(true);
+    try {
+      const res = await studentsApi.createPaymentOrder(user.studentId, amount);
+      const { orderId, key, currency } = res;
+
+      const options = {
+        key: key,
+        amount: amount * 100,
+        currency: currency,
+        name: 'HostelSpace',
+        description: 'Hostel Fee Payment',
+        order_id: orderId,
+        handler: async function (response) {
+          setLoading(true);
+          try {
+            await studentsApi.verifyPayment(user.studentId, {
+              razorpay_payment_id: response.razorpay_payment_id,
+              razorpay_order_id: response.razorpay_order_id,
+              razorpay_signature: response.razorpay_signature,
+              amount: amount,
+            });
+
+            const updatedRes = await studentsApi.getById(user.studentId);
+            const s = updatedRes.data;
+            setStudentData({
+              studentName: `${s.firstName} ${s.lastName}`,
+              registrationNo: s.registrationNumber,
+              academicYear: '2026-27',
+              feeType: 'Hostel Fee',
+              totalFee: s.totalFees || 0,
+              paid: s.initialDeposit || 0,
+              pending: Math.max(0, (s.totalFees || 0) - (s.initialDeposit || 0)),
+              dueDate: '30 Sep 2026',
+              status: s.paymentStatus || 'Pending',
+              paymentHistory: s.payments && s.payments.length > 0
+                ? s.payments.map(p => ({
+                    receiptNo: p.receiptNo,
+                    date: new Date(p.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
+                    amount: p.amount,
+                    paymentMode: p.paymentMode,
+                    status: p.status,
+                    transactionId: p.transactionId || '—',
+                  }))
+                : (s.initialDeposit > 0
+                    ? [{
+                        receiptNo: 'REC_INIT',
+                        date: new Date(s.createdAt || Date.now()).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
+                        amount: s.initialDeposit,
+                        paymentMode: 'Deposit',
+                        status: 'Success',
+                        transactionId: 'INIT_DEP',
+                      }]
+                    : []
+                  ),
+            });
+
+            alert('Payment successful and verified!');
+          } catch (err) {
+            console.error('Payment verification failed:', err);
+            alert('Payment succeeded but verification failed: ' + err.message);
+          } finally {
+            setLoading(false);
+          }
+        },
+        prefill: {
+          name: studentData.studentName,
+          email: user.email,
+        },
+        theme: {
+          color: '#4F46E5',
+        },
+      };
+
+      const rzp = new window.Razorpay(options);
+      rzp.on('payment.failed', function (response) {
+        alert('Payment failed: ' + response.error.description);
+      });
+      rzp.open();
+    } catch (err) {
+      console.error('Failed to initiate payment:', err);
+      alert('Failed to initiate payment: ' + err.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleBackToSelection = () => {
@@ -982,6 +1143,24 @@ export default function StudentFinancePage() {
     setReceiptDrawerOpen(true);
   };
 
+  if (loading) {
+    return (
+      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 400 }}>
+        <CircularProgress size={48} sx={{ color: '#6366F1' }} />
+      </Box>
+    );
+  }
+
+  if (error || !studentData) {
+    return (
+      <Box sx={{ p: 4, textAlign: 'center' }}>
+        <Typography variant="h6" color="error" sx={{ fontWeight: 600 }}>
+          {error || 'Unable to load finance details.'}
+        </Typography>
+      </Box>
+    );
+  }
+
   return (
     <Box sx={{ animation: 'fadeIn 0.5s ease-out' }}>
       {/* Page header */}
@@ -993,19 +1172,19 @@ export default function StudentFinancePage() {
       </Box>
 
       {/* Summary Cards */}
-      <FinanceSummaryCards data={MOCK_STUDENT_FINANCE} />
+      <FinanceSummaryCards data={studentData} />
 
       {/* Payment Due / Fully Paid Section */}
-      <PaymentDueSection data={MOCK_STUDENT_FINANCE} onPayNow={handlePayNow} />
+      <PaymentDueSection data={studentData} onPayNow={handlePayNow} />
 
       {/* Payment History */}
-      <PaymentHistorySection history={MOCK_STUDENT_FINANCE.paymentHistory} onViewReceipt={handleViewReceipt} />
+      <PaymentHistorySection history={studentData.paymentHistory} onViewReceipt={handleViewReceipt} />
 
       {/* Payment Selection Modal */}
       <PaymentSelectionModal
         open={paymentSelectionOpen}
         onClose={() => setPaymentSelectionOpen(false)}
-        data={MOCK_STUDENT_FINANCE}
+        data={studentData}
         onContinue={handleContinueToPayment}
       />
 
@@ -1022,7 +1201,7 @@ export default function StudentFinancePage() {
         open={receiptDrawerOpen}
         onClose={() => setReceiptDrawerOpen(false)}
         receipt={selectedReceipt}
-        studentData={MOCK_STUDENT_FINANCE}
+        studentData={studentData}
       />
     </Box>
   );

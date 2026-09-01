@@ -1,8 +1,9 @@
 import bcrypt from 'bcryptjs';
 import { Op } from 'sequelize';
 import { sequelize } from '../config/database.js';
-import { BedAllocation, Room, Student, User, StudentAttendance, Floor, HostelBlock } from '../models/index.js';
+import { BedAllocation, Room, Student, User, StudentAttendance, Floor, HostelBlock, Payment } from '../models/index.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
+import { env } from '../config/env.js';
 
 // Converts any date string (YYYY-MM-DD or ISO) → DDMMYYYY password
 const dobPassword = (dateOfBirth) => {
@@ -59,24 +60,31 @@ export const listStudents = asyncHandler(async (req, res) => {
 
 export const getStudent = asyncHandler(async (req, res) => {
   const student = await Student.findByPk(req.params.id, {
-    include: [{
-      model: BedAllocation,
-      as: 'allocations',
-      required: false,
-      include: [{
-        model: Room,
-        as: 'room',
+    include: [
+      {
+        model: BedAllocation,
+        as: 'allocations',
+        required: false,
         include: [{
-          model: Floor,
-          as: 'floor',
+          model: Room,
+          as: 'room',
           include: [{
-            model: HostelBlock,
-            as: 'block'
+            model: Floor,
+            as: 'floor',
+            include: [{
+              model: HostelBlock,
+              as: 'block'
+            }]
           }]
-        }]
-      }],
-      order: [['allocatedAt', 'DESC']],
-    }],
+        }],
+        order: [['allocatedAt', 'DESC']],
+      },
+      {
+        model: Payment,
+        as: 'payments',
+        required: false,
+      }
+    ],
   });
   if (!student) return res.status(404).json({ message: 'Student not found.' });
 
@@ -727,4 +735,96 @@ export const updateStudent = asyncHandler(async (req, res) => {
   });
 
   res.json({ message: 'Student details updated successfully.', data: student });
+});
+
+export const createPaymentOrder = asyncHandler(async (req, res) => {
+  const student = await Student.findByPk(req.params.id);
+  if (!student) return res.status(404).json({ message: 'Student not found.' });
+
+  const { amount } = req.body;
+  if (!amount || Number(amount) <= 0) {
+    return res.status(400).json({ message: 'Valid amount is required.' });
+  }
+
+  const authHeader = 'Basic ' + Buffer.from(`${env.razorpay.key}:${env.razorpay.secret}`).toString('base64');
+  try {
+    const response = await fetch('https://api.razorpay.com/v1/orders', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': authHeader,
+      },
+      body: JSON.stringify({
+        amount: Math.round(Number(amount) * 100), // convert to paisa
+        currency: 'INR',
+        receipt: `rcpt_${student.id.slice(0, 8)}_${Date.now()}`,
+      }),
+    });
+
+    const order = await response.json();
+    if (!response.ok) {
+      throw new Error(order.error?.description || 'Razorpay order creation failed.');
+    }
+
+    res.json({
+      orderId: order.id,
+      amount: order.amount,
+      currency: order.currency,
+      key: env.razorpay.key,
+    });
+  } catch (error) {
+    console.error('Razorpay order creation error:', error);
+    res.status(500).json({ message: error.message || 'Failed to create payment order.' });
+  }
+});
+
+export const verifyPayment = asyncHandler(async (req, res) => {
+  const student = await Student.findByPk(req.params.id);
+  if (!student) return res.status(404).json({ message: 'Student not found.' });
+
+  const { razorpay_payment_id, razorpay_order_id, razorpay_signature, amount } = req.body;
+  if (!razorpay_payment_id || !razorpay_order_id || !razorpay_signature) {
+    return res.status(400).json({ message: 'Razorpay payment ID, order ID, and signature are required.' });
+  }
+
+  const crypto = await import('crypto');
+  const shasum = crypto.createHmac('sha256', env.razorpay.secret);
+  shasum.update(`${razorpay_order_id}|${razorpay_payment_id}`);
+  const digest = shasum.digest('hex');
+
+  if (digest !== razorpay_signature) {
+    return res.status(400).json({ message: 'Payment verification failed: Signature mismatch.' });
+  }
+
+  const result = await sequelize.transaction(async (transaction) => {
+    const paidAmount = Number(amount);
+    const currentDeposit = student.initialDeposit || 0;
+    const newDeposit = currentDeposit + paidAmount;
+
+    let status = 'Pending';
+    if (newDeposit >= (student.totalFees || 0)) {
+      status = 'Paid';
+    } else if (newDeposit > 0) {
+      status = 'Partial';
+    }
+
+    await student.update({
+      initialDeposit: newDeposit,
+      paymentStatus: status,
+    }, { transaction });
+
+    const receiptNo = `REC${String(Date.now()).slice(-6)}`;
+    const payment = await Payment.create({
+      studentId: student.id,
+      receiptNo,
+      amount: paidAmount,
+      paymentMode: 'Razorpay',
+      status: 'Success',
+      transactionId: razorpay_payment_id,
+    }, { transaction });
+
+    return { student, payment };
+  });
+
+  res.json({ message: 'Payment verified and recorded successfully.', data: result });
 });

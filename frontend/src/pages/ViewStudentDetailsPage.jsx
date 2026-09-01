@@ -111,6 +111,11 @@ function fmtDate(iso) {
   return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
+function fmtCurrency(val) {
+  if (val === null || val === undefined || val === '') return '—';
+  return `₹${Number(val).toLocaleString('en-IN')}`;
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function ViewStudentDetailsPage() {
@@ -328,16 +333,32 @@ export default function ViewStudentDetailsPage() {
           </CardContent>
         </SectionCard>
 
-        {/* ── SECTION 5: Fee Information (placeholder — no fee model yet) ── */}
+        {/* ── SECTION 5: Fee Information ── */}
         <SectionCard>
           <CardContent sx={{ p: { xs: 2, sm: 4 } }}>
             <SectionHeaderBox>
               <IconWrapper><CreditCard size={24} /></IconWrapper>
               <Typography variant="h6" sx={{ fontWeight: 700 }}>Fee Information</Typography>
             </SectionHeaderBox>
-            <Box sx={{ py: 3, textAlign: 'center', color: 'text.secondary' }}>
-              <Typography variant="body2">Fee records will appear here once the fee module is connected.</Typography>
-            </Box>
+            <GridBox>
+              <InfoField label="Total Fees" value={fmtCurrency(student.totalFees)} />
+              <InfoField label="Initial Deposit" value={fmtCurrency(student.initialDeposit)} />
+              <InfoField label="Remaining Fees" value={fmtCurrency(student.totalFees !== null && student.initialDeposit !== null ? student.totalFees - student.initialDeposit : null)} />
+              <InfoField
+                label="Payment Status"
+                chip
+                value={
+                  <Chip
+                    label={student.initialDeposit === 0 ? 'Not paid' : (student.paymentStatus || 'Pending')}
+                    sx={{
+                      fontWeight: 600,
+                      backgroundColor: student.paymentStatus === 'Paid' ? 'rgba(34,197,94,0.1)' : student.initialDeposit === 0 ? 'rgba(239,68,68,0.1)' : student.paymentStatus === 'Partial' ? 'rgba(245,158,11,0.1)' : 'rgba(239,68,68,0.1)',
+                      color: student.paymentStatus === 'Paid' ? '#16A34A' : student.initialDeposit === 0 ? '#DC2626' : student.paymentStatus === 'Partial' ? '#D97706' : '#DC2626',
+                    }}
+                  />
+                }
+              />
+            </GridBox>
           </CardContent>
         </SectionCard>
 

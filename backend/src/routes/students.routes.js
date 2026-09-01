@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { createStudent, getStudent, listStudents, resetStudentPassword, updateStudentStatus, getAttendanceAnalytics, deleteStudent, updateStudent } from '../controllers/students.controller.js';
+import { createStudent, getStudent, listStudents, resetStudentPassword, updateStudentStatus, getAttendanceAnalytics, deleteStudent, updateStudent, createPaymentOrder, verifyPayment } from '../controllers/students.controller.js';
 import { authenticate, authorize } from '../middleware/authenticate.js';
 
 export const studentsRouter = Router();
@@ -8,6 +8,8 @@ studentsRouter.use(authenticate);
 studentsRouter.get('/attendance/analytics', getAttendanceAnalytics);
 studentsRouter.get('/', listStudents);
 studentsRouter.get('/:id', getStudent);
+studentsRouter.post('/:id/payment/order', createPaymentOrder);
+studentsRouter.post('/:id/payment/verify', verifyPayment);
 studentsRouter.post('/',              authorize('admin'),         createStudent);
 studentsRouter.put('/:id',             authorize('admin'),         updateStudent);
 studentsRouter.patch('/:id/status',   authorize('admin', 'rector'), updateStudentStatus);

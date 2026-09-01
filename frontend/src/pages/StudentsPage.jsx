@@ -131,6 +131,9 @@ export default function StudentsPage() {
         guardianPhone:        newStudentData.parentPhone,
         guardianEmail:        newStudentData.parentEmail || null,
         status:               newStudentData.status,
+        totalFees:            newStudentData.totalFees !== '' && newStudentData.totalFees !== null && newStudentData.totalFees !== undefined ? Number(newStudentData.totalFees) : null,
+        initialDeposit:       newStudentData.initialDeposit !== '' && newStudentData.initialDeposit !== null && newStudentData.initialDeposit !== undefined ? Number(newStudentData.initialDeposit) : null,
+        paymentStatus:        newStudentData.paymentStatus || 'Pending',
         allocation: {
           roomNumber:  newStudentData.roomNumber,
           bedNumber:   newStudentData.bedNumber,
