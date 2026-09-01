@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Box, 
   Typography, 
@@ -8,16 +8,13 @@ import {
   TableCell, 
   TableContainer, 
   TableHead, 
-  TableRow,
-  Paper,
-  Chip,
-  LinearProgress,
-  Button,
-  ButtonGroup,
-  Select,
-  MenuItem,
-  FormControl,
-  InputLabel
+  TableRow, 
+  Paper, 
+  Chip, 
+  LinearProgress, 
+  Button, 
+  CircularProgress,
+  Alert
 } from '@mui/material';
 import { 
   DollarSign, 
@@ -29,10 +26,8 @@ import {
   FileText, 
   Download, 
   Printer, 
-  ExternalLink,
-  ArrowUpRight,
-  ArrowDownRight,
-  ChevronDown
+  ArrowUpRight, 
+  ArrowDownRight 
 } from 'lucide-react';
 import { LocalizationProvider, DatePicker } from '@mui/x-date-pickers';
 import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
@@ -52,75 +47,107 @@ import {
   Tooltip as ChartTooltip,
   Legend
 } from 'recharts';
+import { students as studentsApi } from '../api';
 
-// Mock Data
-const ANNUAL_TREND_DATA = [
-  { name: 'Jan', revenue: 1800000 },
-  { name: 'Feb', revenue: 1950000 },
-  { name: 'Mar', revenue: 2100000 },
-  { name: 'Apr', revenue: 2050000 },
-  { name: 'May', revenue: 2200000 },
-  { name: 'Jun', revenue: 2350000 },
-  { name: 'Jul', revenue: 2485000 }
-];
-
-const PAYMENT_DISTRIBUTION_DATA = [
-  { name: 'Paid', value: 1825000, percentage: 74, color: '#16A34A' },
-  { name: 'Partial', value: 370000, percentage: 15, color: '#F59E0B' },
-  { name: 'Pending', value: 290000, percentage: 11, color: '#DC2626' }
-];
-
-const COLLECTION_VS_PENDING_DATA = [
-  { name: 'Jan', Collected: 1500000, Pending: 300000 },
-  { name: 'Feb', Collected: 1700000, Pending: 250000 },
-  { name: 'Mar', Collected: 1800000, Pending: 300000 },
-  { name: 'Apr', Collected: 1650000, Pending: 350000 },
-  { name: 'May', Collected: 1500000, Pending: 700000 },
-  { name: 'Jun', Collected: 1900000, Pending: 450000 },
-  { name: 'Jul', Collected: 1825000, Pending: 475000 }
-];
-
-const COURSE_COLLECTION_DATA = [
-  { course: 'CSE', Collected: 750000, Revenue: 1000000 },
-  { course: 'ECE', Collected: 480000, Revenue: 600000 },
-  { course: 'ME', Collected: 310000, Revenue: 450000 },
-  { course: 'CE', Collected: 180000, Revenue: 250000 },
-  { course: 'BBA', Collected: 105000, Revenue: 185000 }
-];
-
-const BLOCK_OUTSTANDING_DATA = [
-  { block: 'Block A', Paid: 65, Partial: 20, Pending: 15 },
-  { block: 'Block B', Paid: 55, Partial: 25, Pending: 20 },
-  { block: 'Block C', Paid: 45, Partial: 20, Pending: 35 },
-  { block: 'Block D', Paid: 70, Partial: 15, Pending: 15 }
-];
-
-const TOP_PENDING_STUDENTS = [
-  { name: 'Rohit Sharma', room: 'C-204', amount: 45000, dueDate: '2026-07-20', status: 'Pending' },
-  { name: 'Priya Verma', room: 'B-102', amount: 38000, dueDate: '2026-07-15', status: 'Partial' },
-  { name: 'Amit Singh', room: 'A-108', amount: 35000, dueDate: '2026-07-18', status: 'Pending' },
-  { name: 'Kunal Sen', room: 'C-302', amount: 32000, dueDate: '2026-07-25', status: 'Pending' },
-  { name: 'Neha Gupta', room: 'A-212', amount: 28000, dueDate: '2026-07-22', status: 'Partial' }
-];
-
-const QUICK_INSIGHTS = [
-  { title: 'Highest Revenue Month', value: 'July (₹24.85L)', desc: 'Peak admission period', icon: ArrowUpRight, color: '#16A34A', bg: 'rgba(22, 163, 74, 0.1)' },
-  { title: 'Lowest Collection Month', value: 'May (68%)', desc: 'Pre-exam vacation term', icon: ArrowDownRight, color: '#DC2626', bg: 'rgba(220, 38, 38, 0.1)' },
-  { title: 'Most Pending Block', value: 'Block C (₹1.80L)', desc: 'Requires proactive follow-up', icon: AlertTriangle, color: '#F59E0B', bg: 'rgba(245, 158, 11, 0.1)' },
-  { title: 'Best Paying Department', value: 'Computer Science (CSE)', desc: '92% overall collection rate', icon: CheckCircle, color: '#4F46E5', bg: 'rgba(79, 70, 229, 0.1)' },
-  { title: 'Highest Pending Department', value: 'Business (BBA)', desc: '38% student fees outstanding', icon: AlertTriangle, color: '#EA580C', bg: 'rgba(234, 88, 12, 0.1)' }
-];
+const INSIGHT_ICONS = [ArrowUpRight, ArrowDownRight, AlertTriangle, CheckCircle, AlertTriangle];
 
 export default function FinancesPage() {
   const [selectedDate, setSelectedDate] = useState(dayjs());
+  const [financeData, setFinanceData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   const formatCurrency = (val) => {
     return new Intl.NumberFormat('en-IN', {
       style: 'currency',
       currency: 'INR',
       maximumFractionDigits: 0
-    }).format(val);
+    }).format(val || 0);
   };
+
+  useEffect(() => {
+    let active = true;
+    const fetchAnalytics = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const formattedDate = selectedDate.format('YYYY-MM-DD');
+        const res = await studentsApi.financeAnalytics(formattedDate);
+        if (active) {
+          setFinanceData(res.data);
+        }
+      } catch (err) {
+        console.error('Failed to load finance analytics:', err);
+        if (active) {
+          setError(err.message || 'Failed to load finance analytics.');
+        }
+      } finally {
+        if (active) setLoading(false);
+      }
+    };
+
+    fetchAnalytics();
+    return () => { active = false; };
+  }, [selectedDate]);
+
+  const handleExportCSV = () => {
+    if (!financeData) return;
+    const rows = [
+      ['Metric', 'Value'],
+      ['Total Revenue', financeData.stats.totalRevenue],
+      ['Total Collected', financeData.stats.totalCollected],
+      ['Total Pending', financeData.stats.totalPending],
+      ['Collection Rate', `${financeData.stats.collectionRate}%`],
+      [],
+      ['Student Name', 'Room', 'Pending Amount', 'Due Date', 'Status'],
+      ...(financeData.topPendingStudents || []).map(s => [
+        `"${s.name}"`, `"${s.room}"`, s.amount, `"${s.dueDate}"`, `"${s.status}"`
+      ])
+    ];
+    const csvContent = 'data:text/csv;charset=utf-8,' + rows.map(e => e.join(',')).join('\n');
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute('download', `Finance_Report_${selectedDate.format('YYYY_MM')}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handlePrint = () => {
+    window.print();
+  };
+
+  if (loading) {
+    return (
+      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 450 }}>
+        <CircularProgress size={48} sx={{ color: '#4F46E5' }} />
+      </Box>
+    );
+  }
+
+  if (error) {
+    return (
+      <Box sx={{ p: 4 }}>
+        <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>
+        <Button variant="outlined" onClick={() => setSelectedDate(dayjs())}>Reload Current Month</Button>
+      </Box>
+    );
+  }
+
+  const {
+    stats = { totalRevenue: 0, totalCollected: 0, totalPending: 0, collectionRate: 0 },
+    annualTrendData = [],
+    paymentDistributionData = [],
+    collectionVsPendingData = [],
+    courseCollectionData = [],
+    blockOutstandingData = [],
+    topPendingStudents = [],
+    quickInsights = []
+  } = financeData || {};
+
+  const paidSlice = paymentDistributionData.find(p => p.name === 'Paid');
+  const paidRatio = paidSlice ? paidSlice.percentage : stats.collectionRate;
 
   return (
     <LocalizationProvider dateAdapter={AdapterDayjs}>
@@ -133,7 +160,7 @@ export default function FinancesPage() {
               Finance Reports Dashboard
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-              Track revenue collection, outstanding dues, and financial health metrics.
+              Track real-time revenue collection, outstanding dues, and hostel financial health.
             </Typography>
           </Box>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, width: { xs: '100%', md: 'auto' } }}>
@@ -153,6 +180,7 @@ export default function FinancesPage() {
             <Button
               variant="contained"
               startIcon={<Download size={18} />}
+              onClick={handleExportCSV}
               sx={{ 
                 backgroundColor: '#4F46E5', 
                 '&:hover': { backgroundColor: '#4338CA' },
@@ -182,7 +210,7 @@ export default function FinancesPage() {
             sx={{ 
               p: 3,
               display: 'flex', 
-              flexDirection: 'column',
+              flexDirection: 'column', 
               height: '100%',
               borderRadius: '16px',
               boxShadow: (theme) => theme.palette.mode === 'light' 
@@ -218,10 +246,10 @@ export default function FinancesPage() {
               </Typography>
             </Box>
             <Typography variant="h3" sx={{ fontWeight: 700, mb: 1, color: 'text.primary', fontSize: { xs: '26px', sm: '28px', md: '30px' } }}>
-              {formatCurrency(2485000)}
+              {formatCurrency(stats.totalRevenue)}
             </Typography>
             <Typography variant="body2" sx={{ color: 'text.secondary', fontWeight: 500 }}>
-              Overall Hostel Revenue
+              Overall Assigned Fees
             </Typography>
           </Card>
 
@@ -230,7 +258,7 @@ export default function FinancesPage() {
             sx={{ 
               p: 3,
               display: 'flex', 
-              flexDirection: 'column',
+              flexDirection: 'column', 
               height: '100%',
               borderRadius: '16px',
               boxShadow: (theme) => theme.palette.mode === 'light' 
@@ -265,11 +293,11 @@ export default function FinancesPage() {
                 Total Collected
               </Typography>
             </Box>
-            <Typography variant="h3" sx={{ fontWeight: 700, mb: 1, color: 'text.primary', fontSize: { xs: '26px', sm: '28px', md: '30px' } }}>
-              {formatCurrency(1825000)}
+            <Typography variant="h3" sx={{ fontWeight: 700, mb: 1, color: '#16A34A', fontSize: { xs: '26px', sm: '28px', md: '30px' } }}>
+              {formatCurrency(stats.totalCollected)}
             </Typography>
             <Typography variant="body2" sx={{ color: 'text.secondary', fontWeight: 500 }}>
-              Successfully Collected
+              Successfully Paid
             </Typography>
           </Card>
 
@@ -278,7 +306,7 @@ export default function FinancesPage() {
             sx={{ 
               p: 3,
               display: 'flex', 
-              flexDirection: 'column',
+              flexDirection: 'column', 
               height: '100%',
               borderRadius: '16px',
               boxShadow: (theme) => theme.palette.mode === 'light' 
@@ -313,13 +341,13 @@ export default function FinancesPage() {
                 Total Pending Fees
               </Typography>
             </Box>
-            <Typography variant="h3" sx={{ fontWeight: 700, mb: 1, color: '#D97706', fontSize: { xs: '26px', sm: '28px', md: '30px' } }}>
-              {formatCurrency(475000)}
+            <Typography variant="h3" sx={{ fontWeight: 700, mb: 1, color: stats.totalPending > 0 ? '#DC2626' : '#16A34A', fontSize: { xs: '26px', sm: '28px', md: '30px' } }}>
+              {formatCurrency(stats.totalPending)}
             </Typography>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-              <TrendingDown size={16} color="#DC2626" />
+              <TrendingDown size={16} color={stats.totalPending > 0 ? '#DC2626' : '#16A34A'} />
               <Typography variant="body2" sx={{ color: 'text.secondary', fontWeight: 500 }}>
-                Outstanding Student Fees (↓ 3.2% since last month)
+                Outstanding Student Dues
               </Typography>
             </Box>
           </Card>
@@ -329,7 +357,7 @@ export default function FinancesPage() {
             sx={{ 
               p: 3,
               display: 'flex', 
-              flexDirection: 'column',
+              flexDirection: 'column', 
               height: '100%',
               borderRadius: '16px',
               boxShadow: (theme) => theme.palette.mode === 'light' 
@@ -365,12 +393,12 @@ export default function FinancesPage() {
               </Typography>
             </Box>
             <Typography variant="h3" sx={{ fontWeight: 700, mb: 1.5, color: 'text.primary', fontSize: { xs: '28px', sm: '32px' } }}>
-              74%
+              {stats.collectionRate}%
             </Typography>
             <Box sx={{ width: '100%', mt: 'auto' }}>
               <LinearProgress 
                 variant="determinate" 
-                value={74} 
+                value={stats.collectionRate} 
                 sx={{ 
                   height: 8, 
                   borderRadius: 4, 
@@ -400,18 +428,18 @@ export default function FinancesPage() {
           {/* Monthly Revenue Trend */}
           <Card sx={{ p: 3, height: '100%', display: 'flex', flexDirection: 'column', borderRadius: '16px' }}>
             <Typography variant="h6" sx={{ fontWeight: 600, mb: 3 }}>
-              Monthly Revenue Trend
+              Monthly Revenue Trend ({selectedDate.format('YYYY')})
             </Typography>
             <Box sx={{ flex: 1, minHeight: 320 }}>
               <ResponsiveContainer width="100%" height={320}>
-                <LineChart data={ANNUAL_TREND_DATA} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+                <LineChart data={annualTrendData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E2E8F0" />
                   <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#64748B', fontSize: 12 }} />
                   <YAxis 
                     axisLine={false} 
                     tickLine={false} 
                     tick={{ fill: '#64748B', fontSize: 12 }} 
-                    tickFormatter={(v) => `₹${v/100000}L`}
+                    tickFormatter={(v) => `₹${v/1000}k`}
                   />
                   <ChartTooltip 
                     formatter={(value) => [formatCurrency(value), 'Revenue']}
@@ -436,19 +464,19 @@ export default function FinancesPage() {
               <ResponsiveContainer width="100%" height={320}>
                 <PieChart>
                   <Pie
-                    data={PAYMENT_DISTRIBUTION_DATA}
+                    data={paymentDistributionData.filter(d => d.value > 0).length > 0 ? paymentDistributionData : [{ name: 'No Data', value: 1, color: '#E2E8F0', percentage: 0 }]}
                     innerRadius={80}
                     outerRadius={105}
                     paddingAngle={4}
                     dataKey="value"
                     stroke="none"
                   >
-                    {PAYMENT_DISTRIBUTION_DATA.map((entry, index) => (
+                    {paymentDistributionData.map((entry, index) => (
                       <Cell key={`cell-${index}`} fill={entry.color} />
                     ))}
                   </Pie>
                   <ChartTooltip 
-                    formatter={(value) => [formatCurrency(value), 'Amount']}
+                    formatter={(value, name) => [name === 'No Data' ? '—' : formatCurrency(value), name]}
                     contentStyle={{ 
                       borderRadius: 8, 
                       border: 'none',
@@ -459,7 +487,7 @@ export default function FinancesPage() {
               </ResponsiveContainer>
               <Box sx={{ position: 'absolute', textAlign: 'center' }}>
                 <Typography variant="h4" sx={{ fontWeight: 700, color: 'text.primary', lineHeight: 1 }}>
-                  74%
+                  {paidRatio}%
                 </Typography>
                 <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600 }}>
                   Paid Ratio
@@ -467,7 +495,7 @@ export default function FinancesPage() {
               </Box>
             </Box>
             <Box sx={{ display: 'flex', justifyContent: 'center', gap: 2.5, flexWrap: 'wrap', mt: 2 }}>
-              {PAYMENT_DISTRIBUTION_DATA.map((item, idx) => (
+              {paymentDistributionData.map((item, idx) => (
                 <Box key={idx} sx={{ display: 'flex', alignItems: 'center', gap: 0.8 }}>
                   <Box sx={{ width: 10, height: 10, borderRadius: '50%', backgroundColor: item.color }} />
                   <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600 }}>
@@ -492,18 +520,18 @@ export default function FinancesPage() {
           {/* Collection vs Pending Fees */}
           <Card sx={{ p: 3, height: '100%', display: 'flex', flexDirection: 'column', borderRadius: '16px' }}>
             <Typography variant="h6" sx={{ fontWeight: 600, mb: 3 }}>
-              Collection vs Pending Fees
+              Collection vs Pending Fees ({selectedDate.format('YYYY')})
             </Typography>
             <Box sx={{ flex: 1, minHeight: 320 }}>
               <ResponsiveContainer width="100%" height={320}>
-                <BarChart data={COLLECTION_VS_PENDING_DATA} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+                <BarChart data={collectionVsPendingData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E2E8F0" />
                   <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#64748B', fontSize: 12 }} />
                   <YAxis 
                     axisLine={false} 
                     tickLine={false} 
                     tick={{ fill: '#64748B', fontSize: 12 }} 
-                    tickFormatter={(v) => `₹${v/100000}L`}
+                    tickFormatter={(v) => `₹${v/1000}k`}
                   />
                   <ChartTooltip 
                     formatter={(value) => [formatCurrency(value), '']}
@@ -527,40 +555,46 @@ export default function FinancesPage() {
               Fee Collection by Course
             </Typography>
             <Box sx={{ flex: 1, minHeight: 320 }}>
-              <ResponsiveContainer width="100%" height={320}>
-                <BarChart 
-                  layout="vertical"
-                  data={COURSE_COLLECTION_DATA} 
-                  margin={{ top: 10, right: 10, left: -10, bottom: 0 }}
-                >
-                  <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#E2E8F0" />
-                  <XAxis 
-                    type="number"
-                    axisLine={false} 
-                    tickLine={false} 
-                    tick={{ fill: '#64748B', fontSize: 11 }}
-                    tickFormatter={(v) => `₹${v/1000}K`}
-                  />
-                  <YAxis 
-                    type="category"
-                    dataKey="course" 
-                    axisLine={false} 
-                    tickLine={false} 
-                    tick={{ fill: '#64748B', fontSize: 11 }}
-                  />
-                  <ChartTooltip 
-                    formatter={(value) => [formatCurrency(value), '']}
-                    contentStyle={{ 
-                      borderRadius: 8, 
-                      border: 'none',
-                      boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)' 
-                    }} 
-                  />
-                  <Legend iconType="circle" />
-                  <Bar dataKey="Collected" fill="#4F46E5" radius={[0, 4, 4, 0]} barSize={10} />
-                  <Bar dataKey="Revenue" fill="#E2E8F0" radius={[0, 4, 4, 0]} barSize={10} />
-                </BarChart>
-              </ResponsiveContainer>
+              {courseCollectionData.length === 0 ? (
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
+                  <Typography variant="body2" color="text.secondary">No student courses registered yet.</Typography>
+                </Box>
+              ) : (
+                <ResponsiveContainer width="100%" height={320}>
+                  <BarChart 
+                    layout="vertical"
+                    data={courseCollectionData} 
+                    margin={{ top: 10, right: 10, left: -10, bottom: 0 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#E2E8F0" />
+                    <XAxis 
+                      type="number"
+                      axisLine={false} 
+                      tickLine={false} 
+                      tick={{ fill: '#64748B', fontSize: 11 }}
+                      tickFormatter={(v) => `₹${v/1000}K`}
+                    />
+                    <YAxis 
+                      type="category"
+                      dataKey="course" 
+                      axisLine={false} 
+                      tickLine={false} 
+                      tick={{ fill: '#64748B', fontSize: 11 }}
+                    />
+                    <ChartTooltip 
+                      formatter={(value) => [formatCurrency(value), '']}
+                      contentStyle={{ 
+                        borderRadius: 8, 
+                        border: 'none',
+                        boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)' 
+                      }} 
+                    />
+                    <Legend iconType="circle" />
+                    <Bar dataKey="Collected" fill="#4F46E5" radius={[0, 4, 4, 0]} barSize={10} />
+                    <Bar dataKey="Revenue" fill="#E2E8F0" radius={[0, 4, 4, 0]} barSize={10} />
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
             </Box>
           </Card>
         </Box>
@@ -581,41 +615,47 @@ export default function FinancesPage() {
               Outstanding Fees by Hostel Block (%)
             </Typography>
             <Box sx={{ flex: 1, minHeight: 320 }}>
-              <ResponsiveContainer width="100%" height={320}>
-                <BarChart 
-                  layout="vertical"
-                  data={BLOCK_OUTSTANDING_DATA} 
-                  margin={{ top: 10, right: 10, left: -10, bottom: 0 }}
-                >
-                  <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#E2E8F0" />
-                  <XAxis 
-                    type="number"
-                    axisLine={false} 
-                    tickLine={false} 
-                    tick={{ fill: '#64748B', fontSize: 11 }}
-                    domain={[0, 100]}
-                  />
-                  <YAxis 
-                    type="category"
-                    dataKey="block" 
-                    axisLine={false} 
-                    tickLine={false} 
-                    tick={{ fill: '#64748B', fontSize: 11 }}
-                  />
-                  <ChartTooltip 
-                    formatter={(value) => [`${value}%`, '']}
-                    contentStyle={{ 
-                      borderRadius: 8, 
-                      border: 'none',
-                      boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)' 
-                    }} 
-                  />
-                  <Legend iconType="circle" />
-                  <Bar dataKey="Paid" stackId="a" fill="#16A34A" />
-                  <Bar dataKey="Partial" stackId="a" fill="#F59E0B" />
-                  <Bar dataKey="Pending" stackId="a" fill="#DC2626" />
-                </BarChart>
-              </ResponsiveContainer>
+              {blockOutstandingData.length === 0 ? (
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
+                  <Typography variant="body2" color="text.secondary">No block allocations registered yet.</Typography>
+                </Box>
+              ) : (
+                <ResponsiveContainer width="100%" height={320}>
+                  <BarChart 
+                    layout="vertical"
+                    data={blockOutstandingData} 
+                    margin={{ top: 10, right: 10, left: -10, bottom: 0 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#E2E8F0" />
+                    <XAxis 
+                      type="number"
+                      axisLine={false} 
+                      tickLine={false} 
+                      tick={{ fill: '#64748B', fontSize: 11 }}
+                      domain={[0, 100]}
+                    />
+                    <YAxis 
+                      type="category"
+                      dataKey="block" 
+                      axisLine={false} 
+                      tickLine={false} 
+                      tick={{ fill: '#64748B', fontSize: 11 }}
+                    />
+                    <ChartTooltip 
+                      formatter={(value) => [`${value}%`, '']}
+                      contentStyle={{ 
+                        borderRadius: 8, 
+                        border: 'none',
+                        boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)' 
+                      }} 
+                    />
+                    <Legend iconType="circle" />
+                    <Bar dataKey="Paid" stackId="a" fill="#16A34A" />
+                    <Bar dataKey="Partial" stackId="a" fill="#F59E0B" />
+                    <Bar dataKey="Pending" stackId="a" fill="#DC2626" />
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
             </Box>
           </Card>
 
@@ -636,7 +676,13 @@ export default function FinancesPage() {
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {TOP_PENDING_STUDENTS.map((row, idx) => (
+                  {topPendingStudents.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={5} align="center" sx={{ py: 3, color: 'text.secondary' }}>
+                        No students with pending fee dues found.
+                      </TableCell>
+                    </TableRow>
+                  ) : topPendingStudents.map((row, idx) => (
                     <TableRow key={idx} hover sx={{ '&:last-child td': { borderBottom: 0 } }}>
                       <TableCell sx={{ fontWeight: 600 }}>{row.name}</TableCell>
                       <TableCell sx={{ fontWeight: 500 }}>{row.room}</TableCell>
@@ -678,15 +724,15 @@ export default function FinancesPage() {
               width: '100%'
             }}
           >
-            {QUICK_INSIGHTS.map((insight, idx) => {
-              const Icon = insight.icon;
+            {quickInsights.map((insight, idx) => {
+              const Icon = INSIGHT_ICONS[idx] || ArrowUpRight;
               return (
                 <Card 
                   key={idx}
                   sx={{ 
                     p: 2.5,
                     display: 'flex', 
-                    flexDirection: 'column',
+                    flexDirection: 'column', 
                     borderRadius: '12px',
                     boxShadow: (theme) => theme.palette.mode === 'light' 
                       ? '0 2px 4px rgba(0, 0, 0, 0.02), 0 1px 2px rgba(0, 0, 0, 0.01)'
@@ -735,17 +781,16 @@ export default function FinancesPage() {
           <Box 
             sx={{ 
               display: 'grid', 
-              gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)', md: 'repeat(5, 1fr)' }, 
-              gap: '16px',
+              gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)', md: 'repeat(4, 1fr)' }, 
+              gap: '16px', 
               width: '100%'
             }}
           >
             {[
-              { title: 'View Detailed Report', icon: FileText, color: 'primary' },
-              { title: 'Export Excel', icon: Download, color: 'success' },
-              { title: 'Export PDF', icon: Download, color: 'error' },
-              { title: 'Print Report', icon: Printer, color: 'secondary' },
-              { title: 'View Transactions', icon: FileText, color: 'info' }
+              { title: 'Export CSV Report', icon: Download, color: 'success', onClick: handleExportCSV },
+              { title: 'Print Dashboard Report', icon: Printer, color: 'secondary', onClick: handlePrint },
+              { title: 'View Students with Dues', icon: FileText, color: 'error', onClick: () => window.location.href = '/students' },
+              { title: 'Refresh Analytics', icon: FileText, color: 'primary', onClick: () => setSelectedDate(dayjs(selectedDate)) }
             ].map((act, i) => {
               const Icon = act.icon;
               return (
@@ -754,6 +799,7 @@ export default function FinancesPage() {
                   variant="outlined"
                   fullWidth
                   color={act.color}
+                  onClick={act.onClick}
                   startIcon={<Icon size={18} />}
                   sx={{ 
                     py: 1.5, 

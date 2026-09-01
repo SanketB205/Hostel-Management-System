@@ -91,6 +91,10 @@ export const students = {
     return request('GET', url);
   },
   delete: (id) => request('DELETE', `/students/${id}`),
+  financeAnalytics: (date) => {
+    let url = `/students/finance/analytics?date=${date || ''}`;
+    return request('GET', url);
+  },
   createPaymentOrder: (id, amount) => request('POST', `/students/${id}/payment/order`, { amount }),
   verifyPayment: (id, payload) => request('POST', `/students/${id}/payment/verify`, payload),
 };

@@ -828,3 +828,313 @@ export const verifyPayment = asyncHandler(async (req, res) => {
 
   res.json({ message: 'Payment verified and recorded successfully.', data: result });
 });
+
+export const getFinanceAnalytics = asyncHandler(async (req, res) => {
+  const targetDateStr = req.query.date || new Date().toISOString().slice(0, 10);
+  const targetYear = new Date(targetDateStr).getFullYear() || new Date().getFullYear();
+
+  // 1. Fetch all students with active allocations and payments
+  const students = await Student.findAll({
+    include: [
+      {
+        model: User,
+        as: 'user',
+        attributes: ['role'],
+        where: { role: 'student' }
+      },
+      {
+        model: BedAllocation,
+        as: 'allocations',
+        where: { status: 'active' },
+        required: false,
+        include: [{
+          model: Room,
+          as: 'room',
+          include: [{
+            model: Floor,
+            as: 'floor',
+            include: [{
+              model: HostelBlock,
+              as: 'block'
+            }]
+          }]
+        }]
+      },
+      {
+        model: Payment,
+        as: 'payments',
+        required: false
+      }
+    ]
+  });
+
+  // Fetch all successful payments
+  const allPayments = await Payment.findAll({
+    where: { status: 'Success' },
+    order: [['createdAt', 'ASC']]
+  });
+
+  // 2. Compute KPI summary stats
+  let totalRevenue = 0;
+  let totalCollected = 0;
+  let totalPending = 0;
+  let paidCount = 0;
+  let partialCount = 0;
+  let pendingCount = 0;
+  let paidAmount = 0;
+  let partialAmount = 0;
+  let pendingAmountSum = 0;
+
+  const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const monthlyRevenue = Array(12).fill(0);
+  const monthlyCollected = Array(12).fill(0);
+  const monthlyPending = Array(12).fill(0);
+
+  const courseMap = {};
+  const blockMap = {};
+  const pendingStudentsList = [];
+
+  students.forEach((s) => {
+    const totalFee = Number(s.totalFees) || 0;
+    const initialDep = Number(s.initialDeposit) || 0;
+
+    const studentPaymentsSum = (s.payments || [])
+      .filter((p) => p.status === 'Success')
+      .reduce((sum, p) => sum + Number(p.amount || 0), 0);
+
+    const paid = Math.max(initialDep, studentPaymentsSum);
+    const pending = Math.max(0, totalFee - paid);
+
+    totalRevenue += totalFee;
+    totalCollected += paid;
+    totalPending += pending;
+
+    // Payment distribution
+    if (pending === 0 && totalFee > 0) {
+      paidCount++;
+      paidAmount += paid;
+    } else if (paid > 0) {
+      partialCount++;
+      partialAmount += paid;
+      pendingAmountSum += pending;
+    } else {
+      pendingCount++;
+      pendingAmountSum += pending;
+    }
+
+    // Top pending list
+    if (pending > 0) {
+      const activeAlloc = (s.allocations || [])[0];
+      const roomNum = activeAlloc?.room?.number || '—';
+      pendingStudentsList.push({
+        name: `${s.firstName} ${s.lastName}`,
+        room: roomNum,
+        amount: pending,
+        dueDate: s.admissionDate || `${targetYear}-09-30`,
+        status: paid > 0 ? 'Partial' : 'Pending'
+      });
+    }
+
+    // Course collection
+    const courseName = s.course || 'Unknown';
+    if (!courseMap[courseName]) {
+      courseMap[courseName] = { course: courseName, Collected: 0, Revenue: 0 };
+    }
+    courseMap[courseName].Collected += paid;
+    courseMap[courseName].Revenue += totalFee;
+
+    // Block breakdown
+    const activeAlloc = (s.allocations || [])[0];
+    const blockName = activeAlloc?.room?.floor?.block?.name || 'Unassigned';
+    if (!blockMap[blockName]) {
+      blockMap[blockName] = { block: blockName, total: 0, paid: 0, partial: 0, pending: 0 };
+    }
+    blockMap[blockName].total++;
+    if (pending === 0 && totalFee > 0) {
+      blockMap[blockName].paid++;
+    } else if (paid > 0) {
+      blockMap[blockName].partial++;
+    } else {
+      blockMap[blockName].pending++;
+    }
+
+    // Monthly revenue mapping
+    const createdDate = new Date(s.admissionDate || s.createdAt);
+    if (createdDate.getFullYear() === targetYear) {
+      const m = createdDate.getMonth();
+      monthlyRevenue[m] += totalFee;
+      monthlyPending[m] += pending;
+    }
+  });
+
+  // Monthly collected from payments
+  allPayments.forEach((p) => {
+    const payDate = new Date(p.createdAt);
+    if (payDate.getFullYear() === targetYear) {
+      const m = payDate.getMonth();
+      monthlyCollected[m] += Number(p.amount || 0);
+    }
+  });
+
+  const totalMonthlyCollectedSum = monthlyCollected.reduce((a, b) => a + b, 0);
+  if (totalMonthlyCollectedSum === 0 && totalCollected > 0) {
+    const currentMonthIdx = new Date().getMonth();
+    monthlyCollected[currentMonthIdx] = totalCollected;
+  }
+
+  // Monthly Trend Data
+  const annualTrendData = monthNames.map((name, idx) => ({
+    name,
+    revenue: monthlyCollected[idx] > 0 ? monthlyCollected[idx] : monthlyRevenue[idx]
+  }));
+
+  // Collection vs Pending by Month
+  const collectionVsPendingData = monthNames.map((name, idx) => ({
+    name,
+    Collected: monthlyCollected[idx],
+    Pending: monthlyPending[idx]
+  }));
+
+  // Payment Distribution Data
+  const totalStudents = students.length || 1;
+  const paymentDistributionData = [
+    {
+      name: 'Paid',
+      value: paidAmount,
+      percentage: Math.round((paidCount / totalStudents) * 100),
+      color: '#16A34A'
+    },
+    {
+      name: 'Partial',
+      value: partialAmount,
+      percentage: Math.round((partialCount / totalStudents) * 100),
+      color: '#F59E0B'
+    },
+    {
+      name: 'Pending',
+      value: pendingAmountSum,
+      percentage: Math.round((pendingCount / totalStudents) * 100),
+      color: '#DC2626'
+    }
+  ];
+
+  // Course Collection Data
+  const courseCollectionData = Object.values(courseMap);
+
+  // Block Outstanding Data
+  const blockOutstandingData = Object.values(blockMap).map((b) => ({
+    block: b.block,
+    Paid: b.total > 0 ? Math.round((b.paid / b.total) * 100) : 0,
+    Partial: b.total > 0 ? Math.round((b.partial / b.total) * 100) : 0,
+    Pending: b.total > 0 ? Math.round((b.pending / b.total) * 100) : 0
+  }));
+
+  // Top Pending Students
+  const topPendingStudents = pendingStudentsList
+    .sort((a, b) => b.amount - a.amount)
+    .slice(0, 10);
+
+  // Quick Insights
+  let maxMonthIdx = 0;
+  monthlyRevenue.forEach((rev, i) => {
+    if (rev > monthlyRevenue[maxMonthIdx]) maxMonthIdx = i;
+  });
+  const maxMonthName = monthNames[maxMonthIdx];
+  const maxMonthRev = monthlyRevenue[maxMonthIdx];
+
+  let minMonthIdx = 0;
+  let minMonthVal = Infinity;
+  monthlyCollected.forEach((col, i) => {
+    if (col < minMonthVal) {
+      minMonthVal = col;
+      minMonthIdx = i;
+    }
+  });
+
+  let mostPendingBlockName = 'None';
+  let maxBlockPending = 0;
+  Object.values(blockMap).forEach((b) => {
+    if (b.pending > maxBlockPending) {
+      maxBlockPending = b.pending;
+      mostPendingBlockName = b.block;
+    }
+  });
+
+  let bestDept = '—';
+  let bestDeptRate = 0;
+  Object.values(courseMap).forEach((c) => {
+    const rate = c.Revenue > 0 ? Math.round((c.Collected / c.Revenue) * 100) : 0;
+    if (rate >= bestDeptRate) {
+      bestDeptRate = rate;
+      bestDept = c.course;
+    }
+  });
+
+  let pendingDept = '—';
+  let maxDeptPending = 0;
+  Object.values(courseMap).forEach((c) => {
+    const pendingVal = Math.max(0, c.Revenue - c.Collected);
+    if (pendingVal >= maxDeptPending) {
+      maxDeptPending = pendingVal;
+      pendingDept = c.course;
+    }
+  });
+
+  const collectionRate = totalRevenue > 0 ? Math.round((totalCollected / totalRevenue) * 100) : 0;
+
+  const quickInsights = [
+    {
+      title: 'Highest Revenue Month',
+      value: maxMonthRev > 0 ? `${maxMonthName} (₹${(maxMonthRev / 100000).toFixed(2)}L)` : `${maxMonthName} (₹0)`,
+      desc: 'Based on student fee enrollments',
+      color: '#16A34A',
+      bg: 'rgba(22, 163, 74, 0.1)'
+    },
+    {
+      title: 'Lowest Collection Month',
+      value: `${monthNames[minMonthIdx]} (${minMonthVal === Infinity || minMonthVal === 0 ? '0%' : '₹' + minMonthVal.toLocaleString('en-IN')})`,
+      desc: 'Period with lowest collections',
+      color: '#DC2626',
+      bg: 'rgba(220, 38, 38, 0.1)'
+    },
+    {
+      title: 'Most Pending Block',
+      value: mostPendingBlockName,
+      desc: maxBlockPending > 0 ? `${maxBlockPending} student(s) with dues` : 'No outstanding block dues',
+      color: '#F59E0B',
+      bg: 'rgba(245, 158, 11, 0.1)'
+    },
+    {
+      title: 'Best Paying Department',
+      value: bestDept,
+      desc: `${bestDeptRate}% overall collection rate`,
+      color: '#4F46E5',
+      bg: 'rgba(79, 70, 229, 0.1)'
+    },
+    {
+      title: 'Highest Pending Department',
+      value: pendingDept,
+      desc: maxDeptPending > 0 ? `₹${maxDeptPending.toLocaleString('en-IN')} outstanding` : 'No outstanding fees',
+      color: '#EA580C',
+      bg: 'rgba(234, 88, 12, 0.1)'
+    }
+  ];
+
+  res.json({
+    data: {
+      stats: {
+        totalRevenue,
+        totalCollected,
+        totalPending,
+        collectionRate
+      },
+      annualTrendData,
+      paymentDistributionData,
+      collectionVsPendingData,
+      courseCollectionData,
+      blockOutstandingData,
+      topPendingStudents,
+      quickInsights
+    }
+  });
+});

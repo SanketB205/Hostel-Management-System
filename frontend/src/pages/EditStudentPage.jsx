@@ -2,7 +2,8 @@ import { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import {
   Box, Typography, IconButton, Button, TextField, MenuItem, Chip,
-  useTheme, styled, CircularProgress, Card, CardContent, Snackbar, Alert
+  useTheme, styled, CircularProgress, Card, CardContent, Snackbar, Alert,
+  Switch, FormControlLabel
 } from '@mui/material';
 import { 
   ArrowLeft, Upload, CheckCircle2, User, GraduationCap, Users, 
@@ -115,11 +116,11 @@ const schema = yup.object().shape({
   relationship: yup.string().required('Relationship is required'),
   parentPhone: yup.string().required('Parent phone is required'),
   parentEmail: yup.string().email('Invalid email').nullable(),
-  hostelBlock: yup.string().required('Hostel block is required'),
-  floorNumber: yup.string().required('Floor number is required'),
-  roomNumber: yup.string().required('Room number is required'),
-  bedNumber: yup.string().required('Bed number is required'),
-  allocationDate: yup.date().nullable().required('Allocation date is required'),
+  hostelBlock: yup.string().nullable(),
+  floorNumber: yup.string().nullable(),
+  roomNumber: yup.string().nullable(),
+  bedNumber: yup.string().nullable(),
+  allocationDate: yup.date().nullable(),
   status: yup.string().required('Status is required'),
   totalFees: yup.number().typeError('Must be a number').nullable(),
   initialDeposit: yup.number().typeError('Must be a number').nullable(),
@@ -135,6 +136,13 @@ export default function EditStudentPage() {
 
   const searchParams = useMemo(() => new URLSearchParams(location.search), [location.search]);
   const isTransferMode = useMemo(() => searchParams.get('focus') === 'hostel' || searchParams.get('transfer') === 'true', [searchParams]);
+  const [transferModeEnabled, setTransferModeEnabled] = useState(isTransferMode);
+
+  useEffect(() => {
+    if (isTransferMode) {
+      setTransferModeEnabled(true);
+    }
+  }, [isTransferMode]);
   
   const [loading, setLoading] = useState(true);
   const [student, setStudent] = useState(null);
@@ -334,7 +342,7 @@ export default function EditStudentPage() {
     }
 
     try {
-      await studentsApi.update(id, {
+      const payload = {
         registrationNumber: data.regNo,
         firstName:          data.firstName,
         lastName:           data.lastName,
@@ -355,17 +363,31 @@ export default function EditStudentPage() {
         totalFees:            data.totalFees !== '' && data.totalFees !== null && data.totalFees !== undefined ? Number(data.totalFees) : null,
         initialDeposit:       data.initialDeposit !== '' && data.initialDeposit !== null && data.initialDeposit !== undefined ? Number(data.initialDeposit) : null,
         paymentStatus:        data.paymentStatus || 'Pending',
-        allocation: {
+      };
+
+      if (transferModeEnabled) {
+        if (!data.hostelBlock || !data.floorNumber || !data.roomNumber || !data.bedNumber) {
+          setSnackbar({
+            open: true,
+            message: 'Please select a valid Hostel Block, Floor, Room, and Bed for reallocation.',
+            severity: 'error'
+          });
+          setIsSubmitting(false);
+          return;
+        }
+        payload.allocation = {
           roomNumber:  data.roomNumber,
           bedNumber:   data.bedNumber,
-          allocatedAt: data.allocationDate?.format?.('YYYY-MM-DD') || data.allocationDate,
-        },
-      });
+          allocatedAt: data.allocationDate?.format?.('YYYY-MM-DD') || data.allocationDate || new Date().toISOString().slice(0, 10),
+        };
+      }
+
+      await studentsApi.update(id, payload);
 
       const oldRoomStr = currentAlloc?.room?.number || '';
       const newRoomStr = data.roomNumber || '';
 
-      const successMsg = oldRoomStr && oldRoomStr !== newRoomStr
+      const successMsg = transferModeEnabled && oldRoomStr && oldRoomStr !== newRoomStr
         ? `Student successfully transferred from ${oldRoomStr} to ${newRoomStr}.`
         : 'Student details updated successfully!';
 
@@ -531,7 +553,7 @@ export default function EditStudentPage() {
               id="hostel-info-section"
               sx={{
                 transition: 'all 0.3s ease',
-                ...(isTransferMode && {
+                ...(transferModeEnabled && {
                   border: '2px solid #6366F1',
                   boxShadow: '0 0 20px rgba(99,102,241,0.25)',
                   '@keyframes pulseHighlight': {
@@ -544,12 +566,28 @@ export default function EditStudentPage() {
               }}
             >
               <CardContent sx={{ p: { xs: 2, sm: 4 } }}>
-                <SectionHeaderBox sx={{ mb: currentAlloc ? 1.5 : 3 }}>
-                  <IconWrapper><Home size={24} /></IconWrapper>
-                  <Typography variant="h6" sx={{ fontWeight: 700 }}>Hostel Information</Typography>
+                <SectionHeaderBox sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 1.5, mb: 2 }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                    <IconWrapper><Home size={24} /></IconWrapper>
+                    <Typography variant="h6" sx={{ fontWeight: 700 }}>Hostel Information</Typography>
+                  </Box>
+                  <FormControlLabel
+                    control={
+                      <Switch
+                        checked={transferModeEnabled}
+                        onChange={(e) => setTransferModeEnabled(e.target.checked)}
+                        color="primary"
+                      />
+                    }
+                    label={
+                      <Typography variant="body2" sx={{ fontWeight: 700, color: transferModeEnabled ? 'primary.main' : 'text.secondary' }}>
+                        Enable Transfer Mode
+                      </Typography>
+                    }
+                  />
                 </SectionHeaderBox>
 
-                {currentAlloc && (
+                {currentAlloc ? (
                   <Box sx={{
                     mb: 3, p: 2, borderRadius: '12px',
                     backgroundColor: theme.palette.mode === 'light' ? 'rgba(99,102,241,0.05)' : 'rgba(99,102,241,0.1)',
@@ -559,18 +597,17 @@ export default function EditStudentPage() {
                   }}>
                     <Box>
                       <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 700, textTransform: 'uppercase', display: 'block', mb: 0.5, letterSpacing: '0.5px' }}>
-                        Current Room
+                        Current Room & Bed
                       </Typography>
                       <Typography variant="subtitle2" sx={{ fontWeight: 800, color: '#4F46E5', fontSize: '1rem' }}>
-                        {currentAlloc.room?.number} ({currentAlloc.bedNumber})
+                        {currentAlloc.room?.floor?.block?.name ? `${currentAlloc.room.floor.block.name} - ` : ''}Room {currentAlloc.room?.number} ({currentAlloc.bedNumber})
                       </Typography>
                     </Box>
                     <Chip
-                      label="Transfer Mode Active"
+                      label={transferModeEnabled ? 'Transfer Mode ON (Editing Enabled)' : 'Transfer Mode OFF (Allocation Locked)'}
                       size="small"
+                      color={transferModeEnabled ? 'primary' : 'default'}
                       sx={{
-                        backgroundColor: '#6366F1',
-                        color: '#FFF',
                         fontWeight: 700,
                         fontSize: '0.75rem',
                         borderRadius: '6px',
@@ -578,11 +615,33 @@ export default function EditStudentPage() {
                       }}
                     />
                   </Box>
+                ) : (
+                  <Box sx={{
+                    mb: 3, p: 2, borderRadius: '12px',
+                    backgroundColor: 'action.hover',
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between'
+                  }}>
+                    <Typography variant="body2" color="text.secondary">
+                      No active hostel allocation found for this student.
+                    </Typography>
+                    <Chip
+                      label={transferModeEnabled ? 'Allocation Mode Active' : 'Allocation Locked'}
+                      size="small"
+                      color={transferModeEnabled ? 'primary' : 'default'}
+                    />
+                  </Box>
+                )}
+
+                {!transferModeEnabled && (
+                  <Alert severity="info" sx={{ mb: 3, borderRadius: '10px' }}>
+                    Hostel room and bed allocation are locked. Previous allocation will be kept as is. Turn on <strong>Enable Transfer Mode</strong> above if you wish to transfer or reallocate this student.
+                  </Alert>
                 )}
 
                 <GridBox>
                   <Controller name="hostelBlock" control={control} render={({ field }) => (
-                    <TextField {...field} select fullWidth label="Hostel Block *" error={!!errors.hostelBlock} helperText={errors.hostelBlock?.message}
+                    <TextField {...field} select fullWidth label="Hostel Block" error={!!errors.hostelBlock} helperText={errors.hostelBlock?.message}
+                      disabled={!transferModeEnabled}
                       onChange={(e) => {
                         field.onChange(e);
                         setValue('floorNumber', '');
@@ -596,7 +655,7 @@ export default function EditStudentPage() {
                     </TextField>
                   )} />
                   <Controller name="floorNumber" control={control} render={({ field }) => (
-                    <TextField {...field} select fullWidth label="Floor Number *" error={!!errors.floorNumber} helperText={errors.floorNumber?.message} disabled={!watchBlock}
+                    <TextField {...field} select fullWidth label="Floor Number" error={!!errors.floorNumber} helperText={errors.floorNumber?.message} disabled={!transferModeEnabled || !watchBlock}
                       onChange={(e) => {
                         field.onChange(e);
                         setValue('roomNumber', '');
@@ -609,7 +668,7 @@ export default function EditStudentPage() {
                     </TextField>
                   )} />
                   <Controller name="roomNumber" control={control} render={({ field }) => (
-                    <TextField {...field} select fullWidth label="Room Number *" error={!!errors.roomNumber} helperText={errors.roomNumber?.message} disabled={!watchFloor}
+                    <TextField {...field} select fullWidth label="Room Number" error={!!errors.roomNumber} helperText={errors.roomNumber?.message} disabled={!transferModeEnabled || !watchFloor}
                       onChange={(e) => {
                         field.onChange(e);
                         setValue('bedNumber', '');
@@ -623,15 +682,16 @@ export default function EditStudentPage() {
                     </TextField>
                   )} />
                   <Controller name="bedNumber" control={control} render={({ field }) => (
-                    <TextField {...field} select fullWidth label="Bed Number *" error={!!errors.bedNumber} helperText={errors.bedNumber?.message} disabled={!watchRoom}>
+                    <TextField {...field} select fullWidth label="Bed Number" error={!!errors.bedNumber} helperText={errors.bedNumber?.message} disabled={!transferModeEnabled || !watchRoom}>
                       {bedOptions.map((bedOpt) => (
                         <MenuItem key={bedOpt} value={bedOpt}>{bedOpt}</MenuItem>
                       ))}
                     </TextField>
                   )} />
                   <Controller name="allocationDate" control={control} render={({ field }) => (
-                    <DatePicker label="Allocation Date *" value={field.value} onChange={(newValue) => field.onChange(newValue)}
-                      slotProps={{ textField: { fullWidth: true, error: !!errors.allocationDate, helperText: errors.allocationDate?.message } }} />
+                    <DatePicker label="Allocation Date" value={field.value} onChange={(newValue) => field.onChange(newValue)}
+                      disabled={!transferModeEnabled}
+                      slotProps={{ textField: { fullWidth: true, error: !!errors.allocationDate, helperText: errors.allocationDate?.message, disabled: !transferModeEnabled } }} />
                   )} />
                   <Controller name="status" control={control} render={({ field }) => (
                     <TextField {...field} select fullWidth label="Student Status *" error={!!errors.status} helperText={errors.status?.message}>
