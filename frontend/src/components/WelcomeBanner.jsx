@@ -1,9 +1,11 @@
 import React from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Box, Typography, Button, Stack } from '@mui/material';
 import { ArrowRight } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
 export default function WelcomeBanner() {
+  const navigate = useNavigate();
   const { user } = useAuth();
   const email = user?.email || 'admin@example.com';
   const name = email.split('@')[0];
@@ -63,6 +65,7 @@ export default function WelcomeBanner() {
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
           <Button 
             variant="contained" 
+            onClick={() => navigate('/complaints')}
             sx={{ 
               backgroundColor: 'white', 
               color: '#4F46E5',
@@ -75,6 +78,7 @@ export default function WelcomeBanner() {
           </Button>
           <Button 
             variant="outlined" 
+            onClick={() => navigate('/rooms')}
             endIcon={<ArrowRight size={18} />}
             sx={{ 
               borderColor: 'rgba(255,255,255,0.5)', 
