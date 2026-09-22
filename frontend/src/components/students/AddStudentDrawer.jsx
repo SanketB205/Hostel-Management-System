@@ -1,11 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Drawer, Box, Typography, IconButton, Button, TextField, MenuItem, 
   useTheme, styled, CircularProgress, Card, CardContent
 } from '@mui/material';
 import { 
   ArrowLeft, Upload, CheckCircle2, User, GraduationCap, Users, 
-  Home, CreditCard, FileText, Save, RotateCcw
+  Home, CreditCard, FileText, Save, RotateCcw, Settings2,
 } from 'lucide-react';
 import { useForm, Controller } from 'react-hook-form';
 import { yupResolver } from '@hookform/resolvers/yup';
@@ -13,6 +13,9 @@ import * as yup from 'yup';
 import { LocalizationProvider, DatePicker } from '@mui/x-date-pickers';
 import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
 import { useRoomContext } from '../../contexts/RoomContext';
+import { useAuth } from '../../contexts/AuthContext';
+import { departments as departmentsApi, students as studentsApi } from '../../api';
+import DepartmentManagementModal from './DepartmentManagementModal';
 
 // Styled components
 const FormContainer = styled(Box)(({ theme }) => ({
@@ -80,21 +83,23 @@ const GridBox = styled(Box)(({ theme }) => ({
 }));
 
 // Validation Schema
+const YEAR_OPTIONS = ['1st Year', '2nd Year', '3rd Year', '4th Year', '5th Year'];
+
 const schema = yup.object().shape({
   // Personal
   firstName: yup.string().required('First name is required'),
   lastName: yup.string().required('Last name is required'),
-  regNo: yup.string().required('Registration number is required'),
+  regNo: yup.string().optional(),
   gender: yup.string().required('Gender is required'),
   dob: yup.date().nullable().required('Date of birth is required'),
   email: yup.string().email('Invalid email').required('Email is required'),
   phone: yup.string().required('Phone number is required'),
   address: yup.string().required('Address is required'),
   
-  // Academic
-  department: yup.string().required('Department is required'),
-  course: yup.string().required('Course is required'),
-  year: yup.string().required('Year of study is required'),
+  // Academic — now uses normalized IDs
+  departmentId: yup.string().required('Department is required'),
+  courseId: yup.string().required('Course is required'),
+  yearOfStudy: yup.string().required('Year of study is required'),
   admissionDate: yup.date().nullable().required('Admission date is required'),
   
   // Parent
@@ -119,30 +124,72 @@ const schema = yup.object().shape({
 
 export default function AddStudentDrawer({ open, onClose, onSave }) {
   const theme = useTheme();
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'admin';
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [uploadedFiles, setUploadedFiles] = useState({});
   const { blocks: mockBlocks, fetchBlocks } = useRoomContext();
 
-  React.useEffect(() => {
-    if (open) {
-      fetchBlocks(true);
-    }
-  }, [open, fetchBlocks]);
+  // Departments / courses state
+  const [allDepts, setAllDepts] = useState([]);
+  const [filteredCourses, setFilteredCourses] = useState([]);
+  const [deptModalOpen, setDeptModalOpen] = useState(false);
+  const [nextRegNo, setNextRegNo] = useState('');
+
+  const loadDepts = useCallback(async () => {
+    try {
+      const res = await departmentsApi.list({ status: 'Active' });
+      setAllDepts(res.data || []);
+    } catch (_) { /* silent */ }
+  }, []);
 
   const { control, handleSubmit, reset, watch, setValue, formState: { errors } } = useForm({
     resolver: yupResolver(schema),
     defaultValues: {
       firstName: '', lastName: '', regNo: '', gender: '', dob: null, email: '', phone: '', address: '',
-      department: '', course: '', year: '', admissionDate: null,
+      departmentId: '', courseId: '', yearOfStudy: '', admissionDate: null,
       parentName: '', relationship: '', parentPhone: '', parentEmail: '',
       hostelBlock: '', floorNumber: '', roomNumber: '', bedNumber: '', allocationDate: null, status: 'Present',
       totalFees: '', initialDeposit: '', paymentStatus: 'Pending'
     }
   });
 
+  const loadNextRegNo = useCallback(async () => {
+    try {
+      const res = await studentsApi.getNextRegistrationNumber();
+      if (res?.registrationNumber) {
+        setNextRegNo(res.registrationNumber);
+        setValue('regNo', res.registrationNumber);
+      }
+    } catch (_) {
+      const fallbackYear = String(new Date().getFullYear()).slice(-2);
+      setNextRegNo(`HS-${fallbackYear}-...`);
+    }
+  }, [setValue]);
+
+  useEffect(() => {
+    if (open) {
+      fetchBlocks(true);
+      loadDepts();
+      loadNextRegNo();
+    }
+  }, [open, fetchBlocks, loadDepts, loadNextRegNo]);
+
+  const watchDepartmentId = watch('departmentId');
+  const watchCourseId = watch('courseId');
   const watchBlock = watch('hostelBlock');
   const watchFloor = watch('floorNumber');
   const watchRoom = watch('roomNumber');
+
+  // When department changes → reload filtered courses
+  useEffect(() => {
+    if (watchDepartmentId) {
+      const dept = allDepts.find(d => d.id === watchDepartmentId);
+      setFilteredCourses((dept?.courses || []).filter(c => c.status === 'Active'));
+    } else {
+      setFilteredCourses([]);
+    }
+  }, [watchDepartmentId, allDepts]);
 
   const availableBlocks = mockBlocks.filter(block =>
     (block.floors || []).some(floor =>
@@ -182,6 +229,7 @@ export default function AddStudentDrawer({ open, onClose, onSave }) {
     if (addAnother) {
       reset();
       setUploadedFiles({});
+      loadNextRegNo();
       // Scroll back to top
       const drawerContent = document.getElementById('drawer-form-content');
       if (drawerContent) drawerContent.scrollTop = 0;
@@ -193,6 +241,7 @@ export default function AddStudentDrawer({ open, onClose, onSave }) {
   const handleClose = () => {
     reset();
     setUploadedFiles({});
+    setNextRegNo('');
     onClose();
   };
 
@@ -262,7 +311,17 @@ export default function AddStudentDrawer({ open, onClose, onSave }) {
                     <TextField {...field} fullWidth label="Last Name *" error={!!errors.lastName} helperText={errors.lastName?.message} />
                   )} />
                   <Controller name="regNo" control={control} render={({ field }) => (
-                    <TextField {...field} fullWidth label="Registration Number *" error={!!errors.regNo} helperText={errors.regNo?.message} />
+                    <TextField
+                      {...field}
+                      fullWidth
+                      label="Registration Number"
+                      value={nextRegNo || field.value || 'Generating...'}
+                      disabled
+                      InputProps={{
+                        readOnly: true,
+                      }}
+                      helperText="Auto-generated sequentially per year (e.g. HS-26-001)"
+                    />
                   )} />
                   <Controller name="gender" control={control} render={({ field }) => (
                     <TextField {...field} select fullWidth label="Gender *" error={!!errors.gender} helperText={errors.gender?.message}>
@@ -293,29 +352,94 @@ export default function AddStudentDrawer({ open, onClose, onSave }) {
               <CardContent sx={{ p: { xs: 2, sm: 4 } }}>
                 <SectionHeaderBox>
                   <IconWrapper><GraduationCap size={24} /></IconWrapper>
-                  <Typography variant="h6" sx={{ fontWeight: 700 }}>Academic Information</Typography>
+                  <Typography variant="h6" sx={{ fontWeight: 700, flex: 1 }}>Academic Information</Typography>
+                  {isAdmin && (
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      startIcon={<Settings2 size={14} />}
+                      onClick={() => setDeptModalOpen(true)}
+                      sx={{
+                        textTransform: 'none', fontWeight: 600, fontSize: '0.75rem',
+                        borderRadius: '8px', px: 1.5, py: 0.5,
+                        borderColor: theme.palette.divider,
+                        color: 'text.secondary',
+                        '&:hover': { borderColor: '#4F46E5', color: '#4F46E5', backgroundColor: 'rgba(79,70,229,0.04)' },
+                      }}
+                    >
+                      Manage Departments
+                    </Button>
+                  )}
                 </SectionHeaderBox>
                 <GridBox>
-                  <Controller name="department" control={control} render={({ field }) => (
-                    <TextField {...field} fullWidth label="Department *" error={!!errors.department} helperText={errors.department?.message} />
-                  )} />
-                  <Controller name="course" control={control} render={({ field }) => (
-                    <TextField {...field} select fullWidth label="Course *" error={!!errors.course} helperText={errors.course?.message}>
-                      <MenuItem value="CSE">CSE</MenuItem>
-                      <MenuItem value="ECE">ECE</MenuItem>
-                      <MenuItem value="ME">ME</MenuItem>
-                      <MenuItem value="CE">CE</MenuItem>
-                      <MenuItem value="BBA">BBA</MenuItem>
+                  {/* Department */}
+                  <Controller name="departmentId" control={control} render={({ field }) => (
+                    <TextField
+                      {...field}
+                      select
+                      fullWidth
+                      label="Department *"
+                      error={!!errors.departmentId}
+                      helperText={errors.departmentId?.message}
+                      onChange={e => {
+                        field.onChange(e);
+                        setValue('courseId', '');
+                        setValue('yearOfStudy', '');
+                      }}
+                    >
+                      {allDepts.length === 0 && (
+                        <MenuItem disabled value="">No departments available</MenuItem>
+                      )}
+                      {allDepts.map(d => (
+                        <MenuItem key={d.id} value={d.id}>{d.name}</MenuItem>
+                      ))}
                     </TextField>
                   )} />
-                  <Controller name="year" control={control} render={({ field }) => (
-                    <TextField {...field} select fullWidth label="Year of Study *" error={!!errors.year} helperText={errors.year?.message}>
-                      <MenuItem value="1st">1st Year</MenuItem>
-                      <MenuItem value="2nd">2nd Year</MenuItem>
-                      <MenuItem value="3rd">3rd Year</MenuItem>
-                      <MenuItem value="4th">4th Year</MenuItem>
+
+                  {/* Course — disabled until department selected */}
+                  <Controller name="courseId" control={control} render={({ field }) => (
+                    <TextField
+                      {...field}
+                      select
+                      fullWidth
+                      label="Course *"
+                      error={!!errors.courseId}
+                      helperText={errors.courseId?.message}
+                      disabled={!watchDepartmentId}
+                      onChange={e => {
+                        field.onChange(e);
+                        setValue('yearOfStudy', '');
+                      }}
+                    >
+                      {filteredCourses.length === 0 && (
+                        <MenuItem disabled value="">
+                          {watchDepartmentId ? 'No courses for this department' : 'Select a department first'}
+                        </MenuItem>
+                      )}
+                      {filteredCourses.map(c => (
+                        <MenuItem key={c.id} value={c.id}>{c.name}</MenuItem>
+                      ))}
                     </TextField>
                   )} />
+
+                  {/* Year of Study — disabled until course selected */}
+                  <Controller name="yearOfStudy" control={control} render={({ field }) => (
+                    <TextField
+                      {...field}
+                      select
+                      fullWidth
+                      label="Year of Study *"
+                      error={!!errors.yearOfStudy}
+                      helperText={errors.yearOfStudy?.message}
+                      disabled={!watchCourseId}
+                    >
+                      {YEAR_OPTIONS.map(y => (
+                        <MenuItem key={y} value={y}>{y}</MenuItem>
+                      ))}
+                    </TextField>
+                  )} />
+
+                  {/* Admission Date */}
                   <Controller name="admissionDate" control={control} render={({ field }) => (
                     <DatePicker label="Admission Date *" value={field.value} onChange={(newValue) => field.onChange(newValue)}
                       slotProps={{ textField: { fullWidth: true, error: !!errors.admissionDate, helperText: errors.admissionDate?.message } }} />
@@ -323,6 +447,13 @@ export default function AddStudentDrawer({ open, onClose, onSave }) {
                 </GridBox>
               </CardContent>
             </SectionCard>
+
+            {/* Department Management Modal */}
+            <DepartmentManagementModal
+              open={deptModalOpen}
+              onClose={() => setDeptModalOpen(false)}
+              onUpdated={loadDepts}
+            />
 
             {/* SECTION 3: Parent/Guardian Information */}
             <SectionCard>

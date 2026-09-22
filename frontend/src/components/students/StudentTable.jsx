@@ -128,7 +128,7 @@ export default function StudentTable({ students, isRector = false, isAdmin = fal
   const navigate = useNavigate();
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
-  const [orderBy, setOrderBy] = useState('name');
+  const [orderBy, setOrderBy] = useState('registrationNumber');
   const [order, setOrder] = useState('asc');
   // Track which students the rector has already marked today
   const [markedIds, setMarkedIds] = useState(() => {

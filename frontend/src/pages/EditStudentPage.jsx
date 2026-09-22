@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import {
   Box, Typography, IconButton, Button, TextField, MenuItem, Chip,
@@ -7,7 +7,7 @@ import {
 } from '@mui/material';
 import { 
   ArrowLeft, Upload, CheckCircle2, User, GraduationCap, Users, 
-  Home, CreditCard, FileText, Save, RotateCcw
+  Home, CreditCard, FileText, Save, RotateCcw, Settings2,
 } from 'lucide-react';
 import { useForm, Controller } from 'react-hook-form';
 import { yupResolver } from '@hookform/resolvers/yup';
@@ -17,7 +17,8 @@ import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
 import dayjs from 'dayjs';
 import { useRoomContext } from '../contexts/RoomContext';
 import { useAuth } from '../contexts/AuthContext';
-import { students as studentsApi } from '../api';
+import { students as studentsApi, departments as departmentsApi } from '../api';
+import DepartmentManagementModal from '../components/students/DepartmentManagementModal';
 
 // Styled components (identical to AddStudentDrawer, custom wrapper to negate page margins)
 const PageWrapper = styled(Box)(({ theme }) => ({
@@ -98,6 +99,8 @@ const GridBox = styled(Box)(({ theme }) => ({
   }
 }));
 
+const YEAR_OPTIONS = ['1st Year', '2nd Year', '3rd Year', '4th Year', '5th Year'];
+
 // Validation Schema
 const schema = yup.object().shape({
   firstName: yup.string().required('First name is required'),
@@ -108,9 +111,10 @@ const schema = yup.object().shape({
   email: yup.string().email('Invalid email').required('Email is required'),
   phone: yup.string().required('Phone number is required'),
   address: yup.string().required('Address is required'),
-  department: yup.string().required('Department is required'),
-  course: yup.string().required('Course is required'),
-  year: yup.string().required('Year of study is required'),
+  // Normalized academic fields
+  departmentId: yup.string().required('Department is required'),
+  courseId: yup.string().required('Course is required'),
+  yearOfStudy: yup.string().required('Year of study is required'),
   admissionDate: yup.date().nullable().required('Admission date is required'),
   parentName: yup.string().required('Parent/Guardian name is required'),
   relationship: yup.string().required('Relationship is required'),
@@ -133,6 +137,7 @@ export default function EditStudentPage() {
   const location = useLocation();
   const theme = useTheme();
   const { user } = useAuth();
+  const isAdmin = user?.role === 'admin';
 
   const searchParams = useMemo(() => new URLSearchParams(location.search), [location.search]);
   const isTransferMode = useMemo(() => searchParams.get('focus') === 'hostel' || searchParams.get('transfer') === 'true', [searchParams]);
@@ -150,22 +155,48 @@ export default function EditStudentPage() {
   const [uploadedFiles, setUploadedFiles] = useState({});
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
 
+  // Departments / courses state
+  const [allDepts, setAllDepts] = useState([]);
+  const [filteredCourses, setFilteredCourses] = useState([]);
+  const [deptModalOpen, setDeptModalOpen] = useState(false);
+
+  const loadDepts = useCallback(async () => {
+    try {
+      const res = await departmentsApi.list({ status: 'Active' });
+      setAllDepts(res.data || []);
+    } catch (_) { /* silent */ }
+  }, []);
+
+  useEffect(() => { loadDepts(); }, [loadDepts]);
+
   const { blocks: mockBlocks, fetchBlocks } = useRoomContext();
 
   const { control, handleSubmit, reset, watch, setValue, formState: { errors } } = useForm({
     resolver: yupResolver(schema),
     defaultValues: {
       firstName: '', lastName: '', regNo: '', gender: '', dob: null, email: '', phone: '', address: '',
-      department: '', course: '', year: '', admissionDate: null,
+      departmentId: '', courseId: '', yearOfStudy: '', admissionDate: null,
       parentName: '', relationship: '', parentPhone: '', parentEmail: '',
       hostelBlock: '', floorNumber: '', roomNumber: '', bedNumber: '', allocationDate: null, status: 'Present',
       totalFees: '', initialDeposit: '', paymentStatus: 'Pending'
     }
   });
 
+  const watchDepartmentId = watch('departmentId');
+  const watchCourseId = watch('courseId');
   const watchBlock = watch('hostelBlock');
   const watchFloor = watch('floorNumber');
   const watchRoom = watch('roomNumber');
+
+  // When department changes → reload filtered courses
+  useEffect(() => {
+    if (watchDepartmentId) {
+      const dept = allDepts.find(d => d.id === watchDepartmentId);
+      setFilteredCourses((dept?.courses || []).filter(c => c.status === 'Active'));
+    } else {
+      setFilteredCourses([]);
+    }
+  }, [watchDepartmentId, allDepts]);
 
   // Load student details and verify authorization
   useEffect(() => {
@@ -187,7 +218,43 @@ export default function EditStudentPage() {
           const s = studentRes.data;
           setStudent(s);
           const activeAlloc = (s.allocations || []).find(a => a.status === 'active');
-          
+
+          // Always load all active departments
+          let depts = [];
+          try {
+            const deptRes = await departmentsApi.list({ status: 'Active' });
+            depts = deptRes.data || [];
+            setAllDepts(depts);
+          } catch (_) {}
+
+          // Resolve the department to use — existing or random fallback
+          let resolvedDeptId = s.departmentId || '';
+          let resolvedCourseId = s.courseId || '';
+          let resolvedYearOfStudy = s.yearOfStudy || s.year || '';
+
+          if (!resolvedDeptId && depts.length > 0) {
+            // Pick a random department as fallback
+            const randomDept = depts[Math.floor(Math.random() * depts.length)];
+            resolvedDeptId = randomDept.id;
+          }
+
+          if (resolvedDeptId) {
+            const dept = depts.find(d => d.id === resolvedDeptId);
+            const activeCourses = (dept?.courses || []).filter(c => c.status === 'Active');
+            setFilteredCourses(activeCourses);
+
+            if (!resolvedCourseId && activeCourses.length > 0) {
+              // Pick a random course from the department as fallback
+              const randomCourse = activeCourses[Math.floor(Math.random() * activeCourses.length)];
+              resolvedCourseId = randomCourse.id;
+            }
+          }
+
+          if (!resolvedYearOfStudy) {
+            // Pick a random year as fallback
+            resolvedYearOfStudy = YEAR_OPTIONS[Math.floor(Math.random() * YEAR_OPTIONS.length)];
+          }
+
           reset({
             firstName: s.firstName || '',
             lastName: s.lastName || '',
@@ -197,9 +264,9 @@ export default function EditStudentPage() {
             email: s.email || '',
             phone: s.phone || '',
             address: s.address || '',
-            department: s.department || '',
-            course: s.course || '',
-            year: s.year || '',
+            departmentId: resolvedDeptId,
+            courseId: resolvedCourseId,
+            yearOfStudy: resolvedYearOfStudy,
             admissionDate: s.admissionDate ? dayjs(s.admissionDate) : null,
             parentName: s.guardianName || '',
             relationship: s.guardianRelationship || '',
@@ -210,7 +277,7 @@ export default function EditStudentPage() {
             roomNumber: activeAlloc?.room?.number || '',
             bedNumber: activeAlloc?.bedNumber || '',
             allocationDate: activeAlloc?.allocatedAt ? dayjs(activeAlloc.allocatedAt) : null,
-            status: s.status || 'Present',
+            status: ['Present', 'Absent', 'Outing', 'Leave', 'Late'].includes(s.status) ? s.status : 'Present',
             totalFees: s.totalFees !== null && s.totalFees !== undefined ? s.totalFees : '',
             initialDeposit: s.initialDeposit !== null && s.initialDeposit !== undefined ? s.initialDeposit : '',
             paymentStatus: s.paymentStatus || 'Pending'
@@ -351,9 +418,14 @@ export default function EditStudentPage() {
         email:              data.email.trim().toLowerCase(),
         phone:              data.phone,
         address:            data.address,
-        department:         data.department,
-        course:             data.course,
-        year:               data.year,
+        // Normalized academic fields (backend resolves names from IDs)
+        departmentId:       data.departmentId || undefined,
+        courseId:           data.courseId || undefined,
+        yearOfStudy:        data.yearOfStudy || undefined,
+        // Legacy fallbacks kept for backward compat; backend resolver will overwrite
+        department:         data.department || '',
+        course:             data.course || data.yearOfStudy || '',
+        year:               data.yearOfStudy || data.year || '',
         admissionDate,
         guardianName:         data.parentName,
         guardianRelationship: data.relationship,
@@ -462,7 +534,16 @@ export default function EditStudentPage() {
                     <TextField {...field} fullWidth label="Last Name *" error={!!errors.lastName} helperText={errors.lastName?.message} />
                   )} />
                   <Controller name="regNo" control={control} render={({ field }) => (
-                    <TextField {...field} fullWidth label="Registration Number *" error={!!errors.regNo} helperText={errors.regNo?.message} />
+                    <TextField
+                      {...field}
+                      fullWidth
+                      label="Registration Number"
+                      disabled
+                      InputProps={{
+                        readOnly: true,
+                      }}
+                      helperText="Registration number is permanent and cannot be changed"
+                    />
                   )} />
                   <Controller name="gender" control={control} render={({ field }) => (
                     <TextField {...field} select fullWidth label="Gender *" error={!!errors.gender} helperText={errors.gender?.message}>
@@ -491,31 +572,96 @@ export default function EditStudentPage() {
             {/* SECTION 2: Academic Information */}
             <SectionCard>
               <CardContent sx={{ p: { xs: 2, sm: 4 } }}>
-                <SectionHeaderBox>
+                <SectionHeaderBox sx={{ alignItems: 'center' }}>
                   <IconWrapper><GraduationCap size={24} /></IconWrapper>
-                  <Typography variant="h6" sx={{ fontWeight: 700 }}>Academic Information</Typography>
+                  <Typography variant="h6" sx={{ fontWeight: 700, flex: 1 }}>Academic Information</Typography>
+                  {isAdmin && (
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      startIcon={<Settings2 size={14} />}
+                      onClick={() => setDeptModalOpen(true)}
+                      sx={{
+                        textTransform: 'none', fontWeight: 600, fontSize: '0.75rem',
+                        borderRadius: '8px', px: 1.5, py: 0.5,
+                        borderColor: theme.palette.divider,
+                        color: 'text.secondary',
+                        '&:hover': { borderColor: '#4F46E5', color: '#4F46E5', backgroundColor: 'rgba(79,70,229,0.04)' },
+                      }}
+                    >
+                      Manage Departments
+                    </Button>
+                  )}
                 </SectionHeaderBox>
                 <GridBox>
-                  <Controller name="department" control={control} render={({ field }) => (
-                    <TextField {...field} fullWidth label="Department *" error={!!errors.department} helperText={errors.department?.message} />
-                  )} />
-                  <Controller name="course" control={control} render={({ field }) => (
-                    <TextField {...field} select fullWidth label="Course *" error={!!errors.course} helperText={errors.course?.message}>
-                      <MenuItem value="CSE">CSE</MenuItem>
-                      <MenuItem value="ECE">ECE</MenuItem>
-                      <MenuItem value="ME">ME</MenuItem>
-                      <MenuItem value="CE">CE</MenuItem>
-                      <MenuItem value="BBA">BBA</MenuItem>
+                  {/* Department */}
+                  <Controller name="departmentId" control={control} render={({ field }) => (
+                    <TextField
+                      {...field}
+                      select
+                      fullWidth
+                      label="Department *"
+                      error={!!errors.departmentId}
+                      helperText={errors.departmentId?.message}
+                      onChange={e => {
+                        field.onChange(e);
+                        setValue('courseId', '');
+                        setValue('yearOfStudy', '');
+                      }}
+                    >
+                      {allDepts.length === 0 && (
+                        <MenuItem disabled value="">No departments available</MenuItem>
+                      )}
+                      {allDepts.map(d => (
+                        <MenuItem key={d.id} value={d.id}>{d.name}</MenuItem>
+                      ))}
                     </TextField>
                   )} />
-                  <Controller name="year" control={control} render={({ field }) => (
-                    <TextField {...field} select fullWidth label="Year of Study *" error={!!errors.year} helperText={errors.year?.message}>
-                      <MenuItem value="1st">1st Year</MenuItem>
-                      <MenuItem value="2nd">2nd Year</MenuItem>
-                      <MenuItem value="3rd">3rd Year</MenuItem>
-                      <MenuItem value="4th">4th Year</MenuItem>
+
+                  {/* Course — disabled until department selected */}
+                  <Controller name="courseId" control={control} render={({ field }) => (
+                    <TextField
+                      {...field}
+                      select
+                      fullWidth
+                      label="Course *"
+                      error={!!errors.courseId}
+                      helperText={errors.courseId?.message}
+                      disabled={!watchDepartmentId}
+                      onChange={e => {
+                        field.onChange(e);
+                        setValue('yearOfStudy', '');
+                      }}
+                    >
+                      {filteredCourses.length === 0 && (
+                        <MenuItem disabled value="">
+                          {watchDepartmentId ? 'No courses for this department' : 'Select a department first'}
+                        </MenuItem>
+                      )}
+                      {filteredCourses.map(c => (
+                        <MenuItem key={c.id} value={c.id}>{c.name}</MenuItem>
+                      ))}
                     </TextField>
                   )} />
+
+                  {/* Year of Study — disabled until course selected */}
+                  <Controller name="yearOfStudy" control={control} render={({ field }) => (
+                    <TextField
+                      {...field}
+                      select
+                      fullWidth
+                      label="Year of Study *"
+                      error={!!errors.yearOfStudy}
+                      helperText={errors.yearOfStudy?.message}
+                      disabled={!watchCourseId}
+                    >
+                      {YEAR_OPTIONS.map(y => (
+                        <MenuItem key={y} value={y}>{y}</MenuItem>
+                      ))}
+                    </TextField>
+                  )} />
+
+                  {/* Admission Date */}
                   <Controller name="admissionDate" control={control} render={({ field }) => (
                     <DatePicker label="Admission Date *" value={field.value} onChange={(newValue) => field.onChange(newValue)}
                       slotProps={{ textField: { fullWidth: true, error: !!errors.admissionDate, helperText: errors.admissionDate?.message } }} />
@@ -523,6 +669,13 @@ export default function EditStudentPage() {
                 </GridBox>
               </CardContent>
             </SectionCard>
+
+            {/* Department Management Modal */}
+            <DepartmentManagementModal
+              open={deptModalOpen}
+              onClose={() => setDeptModalOpen(false)}
+              onUpdated={loadDepts}
+            />
 
             {/* SECTION 3: Parent/Guardian Information */}
             <SectionCard>

@@ -113,8 +113,8 @@ export default function StudentsPage() {
     }
 
     try {
-      await studentsApi.create({
-        registrationNumber: newStudentData.regNo,
+      const res = await studentsApi.create({
+        registrationNumber: newStudentData.regNo || undefined,
         firstName:          newStudentData.firstName,
         lastName:           newStudentData.lastName,
         gender:             newStudentData.gender,
@@ -122,9 +122,14 @@ export default function StudentsPage() {
         email:              newStudentData.email.trim().toLowerCase(),
         phone:              newStudentData.phone,
         address:            newStudentData.address,
-        department:         newStudentData.department,
-        course:             newStudentData.course,
-        year:               newStudentData.year,
+        // Normalized academic fields (backend resolves names from IDs)
+        departmentId:       newStudentData.departmentId || undefined,
+        courseId:           newStudentData.courseId || undefined,
+        yearOfStudy:        newStudentData.yearOfStudy || undefined,
+        // Legacy fallbacks (kept for backward compat; will be overwritten by backend resolver)
+        department:         newStudentData.department || '',
+        course:             newStudentData.course || newStudentData.yearOfStudy || '',
+        year:               newStudentData.yearOfStudy || newStudentData.year || '',
         admissionDate,
         guardianName:         newStudentData.parentName,
         guardianRelationship: newStudentData.relationship,
@@ -141,8 +146,13 @@ export default function StudentsPage() {
         },
       });
 
+      const assignedRegNo = res?.data?.registrationNumber;
       await fetchStudents(); // refresh from DB so room is up-to-date
-      setSnackbar({ open: true, message: 'Student added successfully!', severity: 'success' });
+      setSnackbar({
+        open: true,
+        message: assignedRegNo ? `Student added successfully! Registration No: ${assignedRegNo}` : 'Student added successfully!',
+        severity: 'success',
+      });
       return { success: true };
     } catch (error) {
       setSnackbar({ open: true, message: error.message || 'Student could not be saved.', severity: 'error' });

@@ -19,6 +19,10 @@ const PageContainer = styled(Box)(({ theme }) => ({
   display: 'flex',
   flexDirection: 'column',
   gap: theme.spacing(4),
+  paddingBottom: theme.spacing(14),
+  [theme.breakpoints.down('sm')]: {
+    paddingBottom: theme.spacing(11),
+  },
 }));
 
 const SectionCard = styled(Card)(() => ({
@@ -398,16 +402,19 @@ export default function ViewStudentDetailsPage() {
 
       </PageContainer>
 
-      {/* Sticky footer actions */}
+      {/* Fixed bottom action bar */}
       <Box sx={{
-        p: 3, mt: 4,
-        mx: { xs: -2, sm: -3, md: -4 },
-        mb: { xs: -2, sm: -3, md: -4 },
+        py: 2,
+        px: { xs: 2, sm: 3, md: 4 },
         borderTop: `1px solid ${theme.palette.divider}`,
-        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
         backgroundColor: 'background.paper',
-        position: 'sticky',
-        bottom: { xs: -16, sm: -24, md: -32 },
+        position: 'fixed',
+        bottom: 0,
+        left: { xs: 0, md: '280px' },
+        right: 0,
         zIndex: 10,
         boxShadow: '0 -4px 12px rgba(0,0,0,0.05)',
       }}>
@@ -415,12 +422,18 @@ export default function ViewStudentDetailsPage() {
           variant="text"
           onClick={() => navigate(-1)}
           startIcon={<ArrowLeft size={18} />}
-          sx={{ color: 'text.secondary', '&:hover': { color: 'text.primary', backgroundColor: 'action.hover' } }}
+          sx={{ flexShrink: 0, color: 'text.secondary', '&:hover': { color: 'text.primary', backgroundColor: 'action.hover' } }}
         >
           Back
         </Button>
 
-        <Box sx={{ display: 'flex', gap: 2 }}>
+        <Box sx={{
+          display: 'flex',
+          gap: { xs: 1, sm: 1.5, md: 2 },
+          alignItems: 'center',
+          overflowX: 'auto',
+          py: 0.5,
+        }}>
           {isAdmin && (
             <Button
               variant="outlined"
@@ -432,6 +445,7 @@ export default function ViewStudentDetailsPage() {
                 color: '#D97706',
                 borderColor: '#D97706',
                 '&:hover': { backgroundColor: 'rgba(217,119,6,0.08)', borderColor: '#D97706' },
+                whiteSpace: 'nowrap',
               }}
             >
               {resetting ? 'Resetting…' : 'Reset Password'}
@@ -445,6 +459,7 @@ export default function ViewStudentDetailsPage() {
               color: 'text.primary',
               borderColor: theme.palette.mode === 'light' ? '#D1D5DB' : 'divider',
               '&:hover': { backgroundColor: 'action.hover', borderColor: 'text.primary' },
+              whiteSpace: 'nowrap',
             }}
           >
             Print Profile
@@ -453,7 +468,7 @@ export default function ViewStudentDetailsPage() {
             variant="contained"
             color="secondary"
             startIcon={<Download size={18} />}
-            sx={{ display: { xs: 'none', sm: 'flex' }, px: 3, py: 1, boxShadow: 'none' }}
+            sx={{ display: { xs: 'none', sm: 'flex' }, px: 3, py: 1, boxShadow: 'none', whiteSpace: 'nowrap' }}
           >
             Download PDF
           </Button>
@@ -465,6 +480,7 @@ export default function ViewStudentDetailsPage() {
               sx={{
                 backgroundColor: '#4F46E5', '&:hover': { backgroundColor: '#4338CA' },
                 px: { xs: 2, sm: 4 }, py: 1, fontWeight: 600,
+                whiteSpace: 'nowrap',
               }}
             >
               Edit Student

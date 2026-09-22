@@ -9,6 +9,9 @@ export { Complaint } from './Complaint.js';
 export { ComplaintTimeline } from './ComplaintTimeline.js';
 export { StudentAttendance } from './StudentAttendance.js';
 export { Payment } from './Payment.js';
+export { Department } from './Department.js';
+export { Course } from './Course.js';
+export { RegistrationSequence } from './RegistrationSequence.js';
 
 import { User } from './User.js';
 import { HostelBlock } from './HostelBlock.js';
@@ -21,6 +24,17 @@ import { Complaint } from './Complaint.js';
 import { ComplaintTimeline } from './ComplaintTimeline.js';
 import { StudentAttendance } from './StudentAttendance.js';
 import { Payment } from './Payment.js';
+import { Department } from './Department.js';
+import { Course } from './Course.js';
+import { RegistrationSequence } from './RegistrationSequence.js';
+
+// Department & Course associations
+Department.hasMany(Course, { foreignKey: 'departmentId', as: 'courses', onDelete: 'CASCADE' });
+Course.belongsTo(Department, { foreignKey: 'departmentId', as: 'department' });
+Department.hasMany(Student, { foreignKey: 'departmentId', as: 'students' });
+Student.belongsTo(Department, { foreignKey: 'departmentId', as: 'departmentDetails' });
+Course.hasMany(Student, { foreignKey: 'courseId', as: 'students' });
+Student.belongsTo(Course, { foreignKey: 'courseId', as: 'courseDetails' });
 
 HostelBlock.hasMany(Floor, { foreignKey: 'blockId', as: 'floors', onDelete: 'CASCADE' });
 Floor.belongsTo(HostelBlock, { foreignKey: 'blockId', as: 'block' });

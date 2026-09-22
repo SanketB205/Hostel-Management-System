@@ -1,9 +1,11 @@
 import bcrypt from 'bcryptjs';
 import { Op } from 'sequelize';
 import { sequelize } from '../config/database.js';
-import { BedAllocation, Room, Student, User, StudentAttendance, Floor, HostelBlock, Payment } from '../models/index.js';
+import { BedAllocation, Room, Student, User, StudentAttendance, Floor, HostelBlock, Payment, Department, Course, RegistrationSequence } from '../models/index.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { env } from '../config/env.js';
+
+const VALID_YEARS = ['1st Year', '2nd Year', '3rd Year', '4th Year', '5th Year'];
 
 // Converts any date string (YYYY-MM-DD or ISO) → DDMMYYYY password
 const dobPassword = (dateOfBirth) => {
@@ -31,9 +33,11 @@ export const listStudents = asyncHandler(async (req, res) => {
         where: { status: 'active' },
         required: false,
         include: [{ model: Room, as: 'room' }],
-      }
+      },
+      { model: Department, as: 'departmentDetails', required: false },
+      { model: Course, as: 'courseDetails', required: false },
     ],
-    order: [['createdAt', 'DESC']],
+    order: [['registrationNumber', 'ASC']],
   });
 
   // Use req.query.date if provided, otherwise default to today
@@ -83,7 +87,9 @@ export const getStudent = asyncHandler(async (req, res) => {
         model: Payment,
         as: 'payments',
         required: false,
-      }
+      },
+      { model: Department, as: 'departmentDetails', required: false },
+      { model: Course, as: 'courseDetails', required: false },
     ],
   });
   if (!student) return res.status(404).json({ message: 'Student not found.' });
@@ -94,20 +100,141 @@ export const getStudent = asyncHandler(async (req, res) => {
   });
 
   const studentJson = student.toJSON();
-  studentJson.status = attendance ? attendance.status : 'Not Marked';
+  studentJson.attendanceStatus = attendance ? attendance.status : 'Not Marked';
+  studentJson.status = attendance ? attendance.status : (student.status || 'Present');
 
   res.json({ data: studentJson });
+});
+
+// Helper: resolve and validate departmentId/courseId/yearOfStudy from body
+async function resolveAcademicFields(body) {
+  const { departmentId, courseId, yearOfStudy } = body;
+  const resolved = {};
+
+  if (departmentId) {
+    const dept = await Department.findByPk(departmentId);
+    if (!dept) throw Object.assign(new Error('Selected department not found.'), { status: 400 });
+    resolved.departmentId = dept.id;
+    resolved.department = dept.name; // keep legacy string
+  }
+
+  if (courseId) {
+    const course = await Course.findByPk(courseId);
+    if (!course) throw Object.assign(new Error('Selected course not found.'), { status: 400 });
+    if (departmentId && course.departmentId !== departmentId) {
+      throw Object.assign(new Error('Selected course does not belong to the selected department.'), { status: 400 });
+    }
+    resolved.courseId = course.id;
+    resolved.course = course.name; // keep legacy string
+  }
+
+  if (yearOfStudy) {
+    if (!VALID_YEARS.includes(yearOfStudy)) {
+      throw Object.assign(new Error(`Year of study must be one of: ${VALID_YEARS.join(', ')}.`), { status: 400 });
+    }
+    resolved.yearOfStudy = yearOfStudy;
+    resolved.year = yearOfStudy; // keep legacy string
+  }
+
+  return resolved;
+}
+
+// ── Registration Number Sequence Helpers ─────────────────────────────────────
+
+// Helper: atomically generate next student registration number (HS-YY-NNN)
+export async function generateNextRegistrationNumber(transaction) {
+  const year = String(new Date().getFullYear()).slice(-2);
+
+  let sequence = await RegistrationSequence.findOne({
+    where: { year },
+    transaction,
+    lock: transaction.LOCK.UPDATE,
+  });
+
+  if (!sequence) {
+    // Check if any existing student has HS-YY-NNN format to seed starting counter
+    const existing = await Student.findAll({
+      where: {
+        registrationNumber: {
+          [Op.like]: `HS-${year}-%`,
+        },
+      },
+      attributes: ['registrationNumber'],
+      transaction,
+      lock: transaction.LOCK.UPDATE,
+    });
+
+    let maxNum = 0;
+    for (const s of existing) {
+      const parts = String(s.registrationNumber || '').split('-');
+      if (parts.length === 3 && parts[0] === 'HS' && parts[1] === year) {
+        const num = parseInt(parts[2], 10);
+        if (!isNaN(num) && num > maxNum) {
+          maxNum = num;
+        }
+      }
+    }
+
+    sequence = await RegistrationSequence.create({
+      year,
+      lastNumber: maxNum,
+    }, { transaction });
+  }
+
+  const nextNumber = sequence.lastNumber + 1;
+  await sequence.update({ lastNumber: nextNumber }, { transaction });
+
+  return `HS-${year}-${String(nextNumber).padStart(3, '0')}`;
+}
+
+// Handler: preview next registration number without incrementing counter
+export const getNextRegistrationNumberPreview = asyncHandler(async (req, res) => {
+  const year = String(new Date().getFullYear()).slice(-2);
+  const sequence = await RegistrationSequence.findByPk(year);
+
+  let nextNumber = 1;
+  if (sequence) {
+    nextNumber = sequence.lastNumber + 1;
+  } else {
+    const existing = await Student.findAll({
+      where: {
+        registrationNumber: {
+          [Op.like]: `HS-${year}-%`,
+        },
+      },
+      attributes: ['registrationNumber'],
+    });
+    let maxNum = 0;
+    for (const s of existing) {
+      const parts = String(s.registrationNumber || '').split('-');
+      if (parts.length === 3 && parts[0] === 'HS' && parts[1] === year) {
+        const num = parseInt(parts[2], 10);
+        if (!isNaN(num) && num > maxNum) {
+          maxNum = num;
+        }
+      }
+    }
+    nextNumber = maxNum + 1;
+  }
+
+  const registrationNumber = `HS-${year}-${String(nextNumber).padStart(3, '0')}`;
+  res.json({ registrationNumber });
 });
 
 // ── Create student ────────────────────────────────────────────────────────────
 
 export const createStudent = asyncHandler(async (req, res) => {
-  const { registrationNumber, firstName, lastName, dateOfBirth, email, course, year } = req.body;
-  if (!registrationNumber || !firstName || !lastName || !dateOfBirth || !email || !course || !year) {
-    return res.status(400).json({ message: 'Registration number, name, date of birth, email, course, and year are required.' });
+  const { firstName, lastName, dateOfBirth, email, course, year } = req.body;
+  if (!firstName || !lastName || !dateOfBirth || !email || !course || !year) {
+    return res.status(400).json({ message: 'Name, date of birth, email, course, and year are required.' });
   }
 
+  const academicFields = await resolveAcademicFields(req.body);
+
   const result = await sequelize.transaction(async (transaction) => {
+    // Atomically generate sequential registration number for current year
+    const registrationNumber = await generateNextRegistrationNumber(transaction);
+
     // Password is always DDMMYYYY derived from date of birth — no overrides
     const user = await User.create({
       email,
@@ -117,6 +244,8 @@ export const createStudent = asyncHandler(async (req, res) => {
 
     const student = await Student.create({
       ...req.body,
+      ...academicFields,
+      registrationNumber,
       userId: user.id,
     }, { transaction });
 
@@ -662,6 +791,9 @@ export const updateStudent = asyncHandler(async (req, res) => {
   }
 
   await sequelize.transaction(async (transaction) => {
+    // 0. Resolve normalized department/course/year fields
+    const academicFields = await resolveAcademicFields(req.body);
+
     // 1. Update associated User email if email changed
     if (email && email.trim().toLowerCase() !== student.email && student.userId) {
       const user = await User.findByPk(student.userId, { transaction });
@@ -671,7 +803,24 @@ export const updateStudent = asyncHandler(async (req, res) => {
     }
 
     // 2. Update student details
-    await student.update(req.body, { transaction });
+    const studentUpdateData = { ...req.body, ...academicFields };
+    if (studentUpdateData.status === 'Not Marked') {
+      delete studentUpdateData.status;
+    }
+    await student.update(studentUpdateData, { transaction });
+
+    // Sync today's attendance if a status was explicitly passed
+    if (req.body.status && ['Present', 'Absent', 'Outing', 'Leave', 'Late'].includes(req.body.status)) {
+      const today = new Date().toISOString().slice(0, 10);
+      const [attendance, created] = await StudentAttendance.findOrCreate({
+        where: { studentId: student.id, attendanceDate: today },
+        defaults: { studentId: student.id, attendanceDate: today, status: req.body.status },
+        transaction
+      });
+      if (!created) {
+        await attendance.update({ status: req.body.status }, { transaction });
+      }
+    }
 
     // 3. Update allocation details if provided
     const allocationData = req.body.allocation;

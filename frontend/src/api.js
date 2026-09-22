@@ -78,6 +78,7 @@ export const hostel = {
 export const students = {
   list: (params) => request('GET', `/students${params?.date ? `?date=${params.date}` : ''}`),
   getById: (id) => request('GET', `/students/${id}`),
+  getNextRegistrationNumber: () => request('GET', '/students/next-registration-number'),
   create: (studentData) => request('POST', '/students', studentData),
   update: (id, studentData) => request('PUT', `/students/${id}`, studentData),
   updateStatus: (id, status) => request('PATCH', `/students/${id}/status`, { status }),
@@ -152,4 +153,32 @@ export const complaints = {
 export const bootstrap = {
   /** Admin only: delete today's attendance records → all students revert to Not Marked */
   clearTodayAttendance: () => request('DELETE', '/bootstrap/attendance/today'),
+};
+
+// ── Departments ───────────────────────────────────────────────────────────────
+export const departments = {
+  /** List departments (optionally filter by status=Active) */
+  list: (params = {}) => {
+    const qs = new URLSearchParams(
+      Object.entries(params).filter(([, v]) => v)
+    ).toString();
+    return request('GET', `/departments${qs ? `?${qs}` : ''}`);
+  },
+  getById: (id) => request('GET', `/departments/${id}`),
+  create: (data) => request('POST', '/departments', data),
+  update: (id, data) => request('PUT', `/departments/${id}`, data),
+  toggleStatus: (id) => request('PATCH', `/departments/${id}/status`),
+  delete: (id) => request('DELETE', `/departments/${id}`),
+
+  /** Courses nested under a department */
+  listCourses: (departmentId, params = {}) => {
+    const qs = new URLSearchParams(
+      Object.entries(params).filter(([, v]) => v)
+    ).toString();
+    return request('GET', `/departments/${departmentId}/courses${qs ? `?${qs}` : ''}`);
+  },
+  createCourse: (departmentId, data) => request('POST', `/departments/${departmentId}/courses`, data),
+  updateCourse: (courseId, data) => request('PUT', `/departments/courses/${courseId}`, data),
+  toggleCourseStatus: (courseId) => request('PATCH', `/departments/courses/${courseId}/status`),
+  deleteCourse: (courseId) => request('DELETE', `/departments/courses/${courseId}`),
 };
