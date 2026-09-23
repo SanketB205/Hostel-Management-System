@@ -1,70 +1,44 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
+import { useNavigate } from 'react-router-dom';
 import { 
   Box, 
   Card, 
   Typography, 
-  IconButton, 
-  Collapse,
-  LinearProgress,
-  Chip,
-  Tabs,
-  Tab,
-  CircularProgress
+  IconButton,
+  LinearProgress
 } from '@mui/material';
-import { ChevronDown, ChevronUp, Building } from 'lucide-react';
-import FloorSummary from './FloorSummary';
-import RoomCard from './RoomCard';
-import { useRoomContext } from '../../contexts/RoomContext';
+import { ChevronRight, Building } from 'lucide-react';
 
 export default function BlockCard({ block }) {
-  const [expanded, setExpanded] = useState(false);
-  const [loadingDetails, setLoadingDetails] = useState(false);
-  const [selectedFloorIndex, setSelectedFloorIndex] = useState(0);
-  const { fetchBlockDetails } = useRoomContext();
+  const navigate = useNavigate();
 
-  useEffect(() => {
-    if (block.floors && selectedFloorIndex >= block.floors.length) {
-      setSelectedFloorIndex(0);
-    }
-  }, [block.floors?.length, selectedFloorIndex]);
-
-  const handleTabChange = (event, newValue) => {
-    setSelectedFloorIndex(newValue);
-  };
-
-  const handleToggleExpand = async () => {
-    if (!expanded) {
-      if (!block.floors || block.floors.length === 0) {
-        setLoadingDetails(true);
-        try {
-          await fetchBlockDetails(block.id);
-        } catch (err) {
-          console.error(err);
-        } finally {
-          setLoadingDetails(false);
-        }
-      }
-      setExpanded(true);
-    } else {
-      setExpanded(false);
-    }
+  const handleViewBlock = () => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    navigate(`/rooms/block/${block.id}`);
   };
 
   return (
-    <Card sx={{ mb: 4, borderRadius: '16px', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)' }}>
-      {/* Header */}
+    <Card 
+      sx={{ 
+        mb: 3, 
+        borderRadius: '16px', 
+        boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+        cursor: 'pointer',
+        transition: 'all 0.2s ease',
+        '&:hover': { 
+          boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)',
+          transform: 'translateY(-2px)'
+        }
+      }}
+      onClick={handleViewBlock}
+    >
       <Box 
         sx={{ 
           p: 3, 
           display: 'flex', 
           alignItems: 'center', 
-          justifyContent: 'space-between',
-          borderBottom: (expanded && block.floors && block.floors.length > 0) ? '1px solid' : 'none',
-          borderColor: 'divider',
-          cursor: 'pointer',
-          '&:hover': { backgroundColor: 'rgba(0,0,0,0.01)' }
+          justifyContent: 'space-between'
         }}
-        onClick={handleToggleExpand}
       >
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
           <Box 
@@ -120,93 +94,16 @@ export default function BlockCard({ block }) {
           </Box>
         </Box>
 
-        <IconButton size="small">
-          {(expanded || loadingDetails) ? <ChevronUp /> : <ChevronDown />}
+        <IconButton 
+          size="small"
+          sx={{ 
+            color: '#6366F1',
+            '&:hover': { backgroundColor: 'rgba(99, 102, 241, 0.08)' }
+          }}
+        >
+          <ChevronRight />
         </IconButton>
       </Box>
-
-      {/* Content */}
-      <Collapse in={expanded || loadingDetails} timeout="auto" unmountOnExit>
-        {loadingDetails ? (
-          <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', p: 6 }}>
-            <CircularProgress size={36} sx={{ color: '#6366F1' }} />
-          </Box>
-        ) : (
-          block.floors && block.floors.length > 0 && (
-            <Box sx={{ p: 3, display: 'flex', flexDirection: { xs: 'column', lg: 'row' }, gap: 3 }}>
-              {/* Left Column: Floor Summary */}
-              <Box sx={{ width: { xs: '100%', lg: '300px' }, flexShrink: 0 }}>
-                <FloorSummary block={block} />
-              </Box>
-
-              {/* Right Column: Floor Rooms Grid with Tabs */}
-              <Box sx={{ flexGrow: 1 }}>
-                <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 3 }}>
-                  <Tabs 
-                    value={selectedFloorIndex} 
-                    onChange={handleTabChange} 
-                    variant="scrollable"
-                    scrollButtons="auto"
-                    sx={{
-                      '& .MuiTab-root': { fontWeight: 600, textTransform: 'none', fontSize: '1rem', color: 'text.secondary' },
-                      '& .Mui-selected': { color: '#6366F1' },
-                      '& .MuiTabs-indicator': { backgroundColor: '#6366F1' }
-                    }}
-                  >
-                    {block.floors.map((floor, index) => (
-                      <Tab key={floor.name} label={floor.name} />
-                    ))}
-                  </Tabs>
-                </Box>
-
-                {block.floors.map((floor, index) => (
-                  <Box 
-                    key={floor.name} 
-                    role="tabpanel"
-                    hidden={selectedFloorIndex !== index}
-                  >
-                    {selectedFloorIndex === index && (
-                      <Box>
-                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                            <Typography variant="subtitle1" sx={{ fontWeight: 700, color: '#4F46E5' }}>
-                              {floor.name}
-                            </Typography>
-                            <Typography variant="body2" sx={{ color: 'text.secondary', display: 'flex', gap: 1 }}>
-                              <span style={{ color: '#22C55E', fontWeight: 500 }}>Available: {floor.available}</span> | 
-                              <span style={{ color: '#F59E0B', fontWeight: 500 }}>Occupied: {floor.occupied}</span>
-                            </Typography>
-                          </Box>
-                          <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-                            {floor.totalRooms} Rooms
-                          </Typography>
-                        </Box>
-                        
-                        <Box sx={{ 
-                          display: 'grid', 
-                          gridTemplateColumns: '1fr 1fr', 
-                          gap: 2,
-                          maxHeight: '460px',
-                          overflowY: 'auto',
-                          pr: 1,
-                          '&::-webkit-scrollbar': { width: '6px' },
-                          '&::-webkit-scrollbar-track': { background: 'transparent' },
-                          '&::-webkit-scrollbar-thumb': { background: '#cbd5e1', borderRadius: '4px' },
-                          '&::-webkit-scrollbar-thumb:hover': { background: '#94a3b8' }
-                        }}>
-                          {floor.rooms.map((room) => (
-                            <RoomCard key={room.number} room={room} />
-                          ))}
-                        </Box>
-                      </Box>
-                    )}
-                  </Box>
-                ))}
-              </Box>
-            </Box>
-          )
-        )}
-      </Collapse>
     </Card>
   );
 }

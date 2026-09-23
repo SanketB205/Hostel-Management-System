@@ -14,6 +14,7 @@ import ComplaintsPage from './pages/ComplaintsPage';
 import StudentComplaintsPage from './pages/StudentComplaintsPage';
 import RaiseComplaintPage from './pages/RaiseComplaintPage';
 import RoomsPage from './pages/RoomsPage';
+import BlockDetailPage from './pages/BlockDetailPage';
 import RoomAllocationPage from './pages/RoomAllocationPage';
 import ViewStudentDetailsPage from './pages/ViewStudentDetailsPage';
 import EditStudentPage from './pages/EditStudentPage';
@@ -82,6 +83,7 @@ function DashboardLayout() {
               <Route path="/complaints/my" element={<StudentComplaintsPage />} />
               <Route path="/complaints/raise" element={<RaiseComplaintPage />} />
               <Route path="/rooms" element={<RoomsPage />} />
+              <Route path="/rooms/block/:blockId" element={<BlockDetailPage />} />
               <Route path="/room-allocation" element={<RoomAllocationPage />} />
               <Route path="/attendance/student" element={<StudentAttendancePage />} />
               <Route path="/attendance/staff" element={<StaffAttendancePage />} />

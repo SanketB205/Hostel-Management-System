@@ -72,6 +72,9 @@ export const hostel = {
 
   deleteRoom: (roomId) =>
     request('DELETE', `/hostel/rooms/${roomId}`),
+
+  deleteBlock: (blockId) =>
+    request('DELETE', `/hostel/blocks/${blockId}`),
 };
 
 // ── Students ──────────────────────────────────────────────────────────────────

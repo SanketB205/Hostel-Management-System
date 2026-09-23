@@ -1,8 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Box, Card, Typography, LinearProgress, Chip, IconButton,
-  Dialog, DialogTitle, DialogContent, DialogActions, Button,
+  Modal, Backdrop, DialogTitle, DialogContent, DialogActions, Button,
   Divider, Avatar, CircularProgress, Tooltip, Snackbar, Alert
 } from '@mui/material';
 import {
@@ -103,6 +103,16 @@ export default function RoomCard({ room }) {
 
   const { getStudentsForRoom, fetchBlocks } = useRoomContext();
 
+  // Lock body scroll when any modal is open
+  useEffect(() => {
+    if (dialogOpen || deleteConfirmOpen || deleteWarningOpen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => { document.body.style.overflow = ''; };
+  }, [dialogOpen, deleteConfirmOpen, deleteWarningOpen]);
+
   const config = STATUS_CONFIG[room.status] || STATUS_CONFIG.Available;
   const bedsOccupied = room.bedsOccupied || 0;
   const occupancyPct = room.capacity > 0 ? Math.min((bedsOccupied / room.capacity) * 100, 100) : 0;
@@ -201,13 +211,61 @@ export default function RoomCard({ room }) {
       </Card>
 
       {/* ── View Room Dialog ── */}
-      <Dialog
+      <Modal
         open={dialogOpen}
         onClose={handleCloseDialog}
-        maxWidth="sm"
-        fullWidth
-        slotProps={{ paper: { sx: { borderRadius: '16px', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)' } } }}
+        closeAfterTransition
+        disablePortal={false}
+        disableScrollLock={false}
+        keepMounted={false}
+        container={() => document.body}
+        slots={{ backdrop: Backdrop }}
+        slotProps={{
+          backdrop: {
+            timeout: 500,
+            sx: {
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              width: '100vw',
+              height: '100vh',
+              backgroundColor: 'rgba(0, 0, 0, 0.75)',
+              backdropFilter: 'blur(8px)',
+              WebkitBackdropFilter: 'blur(8px)',
+              zIndex: 1400,
+            },
+          },
+        }}
+        sx={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          zIndex: 1400,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
       >
+        <Box
+          sx={{
+            position: 'relative',
+            width: { xs: '90%', sm: '600px' },
+            maxWidth: '95vw',
+            maxHeight: '85vh',
+            display: 'flex',
+            flexDirection: 'column',
+            backgroundColor: 'background.paper',
+            borderRadius: '16px',
+            boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)',
+            outline: 'none',
+            zIndex: 1401,
+            overflow: 'hidden',
+          }}
+        >
         {/* Dialog header */}
         <DialogTitle component="div" sx={{ p: 3, pb: 2 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -314,16 +372,65 @@ export default function RoomCard({ room }) {
             </DialogActions>
           </>
         )}
-      </Dialog>
+        </Box>
+      </Modal>
 
       {/* ── Cannot Delete Room Warning Dialog ── */}
-      <Dialog
+      <Modal
         open={deleteWarningOpen}
         onClose={() => setDeleteWarningOpen(false)}
-        maxWidth="sm"
-        fullWidth
-        slotProps={{ paper: { sx: { borderRadius: '16px', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)' } } }}
+        closeAfterTransition
+        disablePortal={false}
+        disableScrollLock={false}
+        keepMounted={false}
+        container={() => document.body}
+        slots={{ backdrop: Backdrop }}
+        slotProps={{
+          backdrop: {
+            timeout: 500,
+            sx: {
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              width: '100vw',
+              height: '100vh',
+              backgroundColor: 'rgba(0, 0, 0, 0.75)',
+              backdropFilter: 'blur(8px)',
+              WebkitBackdropFilter: 'blur(8px)',
+              zIndex: 1400,
+            },
+          },
+        }}
+        sx={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          zIndex: 1400,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
       >
+        <Box
+          sx={{
+            position: 'relative',
+            width: { xs: '90%', sm: '600px' },
+            maxWidth: '95vw',
+            maxHeight: '85vh',
+            display: 'flex',
+            flexDirection: 'column',
+            backgroundColor: 'background.paper',
+            borderRadius: '16px',
+            boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)',
+            outline: 'none',
+            zIndex: 1401,
+            overflow: 'hidden',
+          }}
+        >
         <DialogTitle component="div" sx={{ p: 3, pb: 2, display: 'flex', alignItems: 'center', gap: 1.5 }}>
           <Box sx={{
             display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -386,16 +493,61 @@ export default function RoomCard({ room }) {
             Close
           </Button>
         </DialogActions>
-      </Dialog>
+        </Box>
+      </Modal>
 
       {/* ── Normal Delete Confirmation Dialog ── */}
-      <Dialog
+      <Modal
         open={deleteConfirmOpen}
         onClose={() => setDeleteConfirmOpen(false)}
-        maxWidth="xs"
-        fullWidth
-        slotProps={{ paper: { sx: { borderRadius: '16px' } } }}
+        closeAfterTransition
+        disablePortal={false}
+        disableScrollLock={false}
+        keepMounted={false}
+        container={() => document.body}
+        slots={{ backdrop: Backdrop }}
+        slotProps={{
+          backdrop: {
+            timeout: 500,
+            sx: {
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              width: '100vw',
+              height: '100vh',
+              backgroundColor: 'rgba(0, 0, 0, 0.75)',
+              backdropFilter: 'blur(8px)',
+              WebkitBackdropFilter: 'blur(8px)',
+              zIndex: 1400,
+            },
+          },
+        }}
+        sx={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          zIndex: 1400,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
       >
+        <Box
+          sx={{
+            position: 'relative',
+            width: { xs: '90%', sm: '400px' },
+            maxWidth: '95vw',
+            backgroundColor: 'background.paper',
+            borderRadius: '16px',
+            boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04)',
+            outline: 'none',
+            zIndex: 1401,
+          }}
+        >
         <DialogTitle component="div" sx={{ p: 3, pb: 2 }}>
           <Typography variant="h6" sx={{ fontWeight: 700 }}>Delete Room</Typography>
         </DialogTitle>
@@ -430,7 +582,8 @@ export default function RoomCard({ room }) {
             Delete
           </Button>
         </DialogActions>
-      </Dialog>
+        </Box>
+      </Modal>
 
       {/* Snackbar feedback */}
       <Snackbar

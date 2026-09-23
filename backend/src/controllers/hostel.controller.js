@@ -129,6 +129,56 @@ export const createBlock = asyncHandler(async (req, res) => {
   res.status(201).json({ data: block });
 });
 
+export const deleteBlock = asyncHandler(async (req, res) => {
+  const block = await HostelBlock.findByPk(req.params.blockId, {
+    include: [{
+      model: Floor, 
+      as: 'floors',
+      include: [{
+        model: Room, 
+        as: 'rooms'
+      }]
+    }]
+  });
+
+  if (!block) return res.status(404).json({ message: 'Block not found.' });
+
+  // Check if any room in this block has active student allocations
+  let totalOccupied = 0;
+  for (const floor of block.floors || []) {
+    for (const room of floor.rooms || []) {
+      const activeAllocCount = await BedAllocation.count({
+        where: { roomId: room.id, status: 'active' }
+      });
+      if (activeAllocCount > 0) {
+        totalOccupied += activeAllocCount;
+      }
+    }
+  }
+
+  if (totalOccupied > 0) {
+    return res.status(400).json({ 
+      message: `Cannot delete ${block.name}. This block has ${totalOccupied} student(s) currently allocated. Transfer all students before deleting this block.` 
+    });
+  }
+
+  // Delete block and cascade to floors and rooms
+  await sequelize.transaction(async (transaction) => {
+    // Delete all rooms in all floors
+    for (const floor of block.floors || []) {
+      for (const room of floor.rooms || []) {
+        await BedAllocation.destroy({ where: { roomId: room.id }, transaction });
+        await room.destroy({ transaction });
+      }
+      await floor.destroy({ transaction });
+    }
+    // Delete the block
+    await block.destroy({ transaction });
+  });
+
+  res.json({ message: `${block.name} deleted successfully.` });
+});
+
 // ── floors ───────────────────────────────────────────────────────────────────
 
 export const createFloor = asyncHandler(async (req, res) => {

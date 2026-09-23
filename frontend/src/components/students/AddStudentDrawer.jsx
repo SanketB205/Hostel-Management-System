@@ -128,7 +128,11 @@ export default function AddStudentDrawer({ open, onClose, onSave }) {
   const isAdmin = user?.role === 'admin';
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [uploadedFiles, setUploadedFiles] = useState({});
-  const { blocks: mockBlocks, fetchBlocks } = useRoomContext();
+  const { blocks: mockBlocks, fetchBlocks, getStudentsForRoom } = useRoomContext();
+  
+  // Track allocated beds in selected room
+  const [allocatedBeds, setAllocatedBeds] = useState([]);
+  const [loadingBeds, setLoadingBeds] = useState(false);
 
   // Departments / courses state
   const [allDepts, setAllDepts] = useState([]);
@@ -217,6 +221,30 @@ export default function AddStudentDrawer({ open, onClose, onSave }) {
 
   const selectedRoomObj = selectedFloorObj?.rooms?.find(r => r.number === watchRoom);
 
+  // Fetch allocated beds whenever selected room changes
+  useEffect(() => {
+    const fetchAllocatedBeds = async () => {
+      if (!selectedRoomObj?.id) {
+        setAllocatedBeds([]);
+        return;
+      }
+
+      setLoadingBeds(true);
+      try {
+        const students = await getStudentsForRoom(selectedRoomObj.id);
+        const occupiedBeds = students.map(s => s.bedNumber);
+        setAllocatedBeds(occupiedBeds);
+      } catch (err) {
+        console.error('Failed to fetch allocated beds:', err);
+        setAllocatedBeds([]);
+      } finally {
+        setLoadingBeds(false);
+      }
+    };
+
+    fetchAllocatedBeds();
+  }, [selectedRoomObj?.id, getStudentsForRoom]);
+
   const onSubmit = async (data, addAnother = false) => {
     setIsSubmitting(true);
     // Mock API call
@@ -242,6 +270,7 @@ export default function AddStudentDrawer({ open, onClose, onSave }) {
     reset();
     setUploadedFiles({});
     setNextRegNo('');
+    setAllocatedBeds([]);
     onClose();
   };
 
@@ -529,15 +558,29 @@ export default function AddStudentDrawer({ open, onClose, onSave }) {
                     </TextField>
                   )} />
                   <Controller name="bedNumber" control={control} render={({ field }) => (
-                    <TextField {...field} select fullWidth label="Bed Number *" error={!!errors.bedNumber} helperText={errors.bedNumber?.message} disabled={!watchRoom}>
-                      {selectedRoomObj
-                        ? Array.from({ length: selectedRoomObj.capacity - (selectedRoomObj.bedsOccupied || 0) }).map((_, i) => (
-                            <MenuItem key={i} value={`Bed ${(selectedRoomObj.bedsOccupied || 0) + i + 1}`}>
-                              Bed {(selectedRoomObj.bedsOccupied || 0) + i + 1}
+                    <TextField {...field} select fullWidth label="Bed Number *" error={!!errors.bedNumber} helperText={errors.bedNumber?.message} disabled={!watchRoom || loadingBeds}>
+                      {selectedRoomObj && !loadingBeds ? (
+                        // Generate all possible bed numbers for this room
+                        Array.from({ length: selectedRoomObj.capacity }).map((_, i) => {
+                          const bedNumber = i + 1;
+                          const bedName = `Bed ${bedNumber}`;
+                          
+                          // Only show beds that are NOT already allocated
+                          if (allocatedBeds.includes(bedName)) {
+                            return null;
+                          }
+                          
+                          return (
+                            <MenuItem key={bedNumber} value={bedName}>
+                              {bedName}
                             </MenuItem>
-                          ))
-                        : []
-                      }
+                          );
+                        }).filter(Boolean)
+                      ) : loadingBeds ? (
+                        <MenuItem disabled>Loading available beds...</MenuItem>
+                      ) : (
+                        <MenuItem disabled>Select a room first</MenuItem>
+                      )}
                     </TextField>
                   )} />
                   <Controller name="allocationDate" control={control} render={({ field }) => (

@@ -9,6 +9,7 @@ import {
   listRooms,
   getBlockDetails,
   deleteRoom,
+  deleteBlock,
   getDashboardStats,
 } from '../controllers/hostel.controller.js';
 import { authenticate, authorize } from '../middleware/authenticate.js';
@@ -24,6 +25,7 @@ hostelRouter.get('/dashboard/stats', getDashboardStats);
 hostelRouter.get('/blocks', listBlocks);
 hostelRouter.get('/blocks/:blockId', getBlockDetails);
 hostelRouter.post('/blocks', authorize('admin'), createBlock);
+hostelRouter.delete('/blocks/:blockId', authorize('admin'), deleteBlock);
 hostelRouter.post('/blocks/:blockId/floors', authorize('admin'), createFloor);
 
 // rooms

@@ -361,23 +361,62 @@ export default function EditStudentPage() {
     return selectedFloorObj?.rooms?.find(r => r.number === watchRoom);
   }, [selectedFloorObj, watchRoom]);
 
+  // Track allocated beds for selected room
+  const [allocatedBeds, setAllocatedBeds] = useState([]);
+  const [loadingBeds, setLoadingBeds] = useState(false);
+  const { getStudentsForRoom } = useRoomContext();
+
+  // Fetch allocated beds when room changes
+  useEffect(() => {
+    const fetchAllocatedBeds = async () => {
+      if (!selectedRoomObj || !selectedRoomObj.id) {
+        setAllocatedBeds([]);
+        return;
+      }
+
+      // Don't fetch if this is the current room (we already know the current bed)
+      const isCurrentRoom = selectedRoomObj.number === currentRoomNumber;
+      if (isCurrentRoom) {
+        setAllocatedBeds([currentBedNumber].filter(Boolean));
+        return;
+      }
+
+      setLoadingBeds(true);
+      try {
+        const students = await getStudentsForRoom(selectedRoomObj.id);
+        const occupiedBeds = students.map(s => s.bedNumber);
+        setAllocatedBeds(occupiedBeds);
+      } catch (err) {
+        console.error('Failed to load allocated beds:', err);
+        setAllocatedBeds([]);
+      } finally {
+        setLoadingBeds(false);
+      }
+    };
+
+    fetchAllocatedBeds();
+  }, [selectedRoomObj, currentRoomNumber, currentBedNumber, getStudentsForRoom]);
+
   const bedOptions = useMemo(() => {
     if (!selectedRoomObj) return [];
-    const freeBeds = selectedRoomObj.capacity - (selectedRoomObj.bedsOccupied || 0);
+    
     const isCurrentRoom = selectedRoomObj.number === currentRoomNumber;
-    const optionCount = freeBeds + (isCurrentRoom ? 1 : 0);
-    
     const options = [];
-    for (let i = 0; i < optionCount; i++) {
-      options.push(`Bed ${i + 1}`);
+
+    // Generate all possible bed numbers for this room
+    for (let i = 1; i <= selectedRoomObj.capacity; i++) {
+      const bedName = `Bed ${i}`;
+      
+      // Include bed if:
+      // 1. It's not in the allocated list, OR
+      // 2. It's the current student's bed (allow keeping same bed)
+      if (!allocatedBeds.includes(bedName) || (isCurrentRoom && bedName === currentBedNumber)) {
+        options.push(bedName);
+      }
     }
-    
-    if (isCurrentRoom && currentBedNumber && !options.includes(currentBedNumber)) {
-      options.push(currentBedNumber);
-    }
-    
+
     return options;
-  }, [selectedRoomObj, currentRoomNumber, currentBedNumber]);
+  }, [selectedRoomObj, allocatedBeds, currentRoomNumber, currentBedNumber]);
 
   const onSubmit = async (data) => {
     setIsSubmitting(true);
@@ -456,6 +495,9 @@ export default function EditStudentPage() {
 
       await studentsApi.update(id, payload);
 
+      // Refresh room blocks data to reflect the updated room statuses
+      await fetchBlocks(true);
+
       const oldRoomStr = currentAlloc?.room?.number || '';
       const newRoomStr = data.roomNumber || '';
 
@@ -465,7 +507,15 @@ export default function EditStudentPage() {
 
       setSnackbar({ open: true, message: successMsg, severity: 'success' });
       setTimeout(() => {
-        if (isTransferMode) {
+        if (isTransferMode && oldRoomStr && oldRoomStr !== newRoomStr) {
+          // Redirect to the source room's detail page after transfer
+          const sourceBlockId = currentAlloc?.room?.floor?.block?.id;
+          if (sourceBlockId) {
+            navigate(`/rooms/block/${sourceBlockId}`);
+          } else {
+            navigate('/rooms');
+          }
+        } else if (isTransferMode) {
           navigate('/rooms');
         } else {
           navigate(`/students/${id}`);

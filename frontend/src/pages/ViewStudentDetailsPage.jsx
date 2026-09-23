@@ -4,7 +4,7 @@ import {
   Box, Typography, IconButton, Button,
   useTheme, styled, Card, CardContent,
   Avatar, Chip, CircularProgress, Alert, Snackbar,
-  Dialog, DialogTitle, DialogContent, DialogContentText, DialogActions
+  Modal, Backdrop, DialogTitle, DialogContent, DialogContentText, DialogActions
 } from '@mui/material';
 import {
   ArrowLeft, User, GraduationCap, Users,
@@ -138,6 +138,16 @@ export default function ViewStudentDetailsPage() {
   const [resetting, setResetting] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
+
+  // Lock body scroll when delete modal is open
+  useEffect(() => {
+    if (deleteOpen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => { document.body.style.overflow = ''; };
+  }, [deleteOpen]);
 
   const handleResetPassword = async () => {
     setResetting(true);
@@ -501,52 +511,93 @@ export default function ViewStudentDetailsPage() {
       </Snackbar>
 
       {isAdmin && (
-        <Dialog
+        <Modal
           open={deleteOpen}
           onClose={() => !deleting && setDeleteOpen(false)}
-          aria-labelledby="delete-dialog-title"
-          aria-describedby="delete-dialog-description"
-          PaperProps={{
-            sx: {
-              borderRadius: '16px',
-              p: 1
-            }
+          closeAfterTransition
+          disablePortal={false}
+          disableScrollLock={false}
+          keepMounted={false}
+          container={() => document.body}
+          slots={{ backdrop: Backdrop }}
+          slotProps={{
+            backdrop: {
+              timeout: 500,
+              sx: {
+                position: 'fixed',
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                width: '100vw',
+                height: '100vh',
+                backgroundColor: 'rgba(0, 0, 0, 0.75)',
+                backdropFilter: 'blur(8px)',
+                WebkitBackdropFilter: 'blur(8px)',
+                zIndex: 1400,
+              },
+            },
+          }}
+          sx={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            zIndex: 1400,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
           }}
         >
-          <DialogTitle id="delete-dialog-title" sx={{ fontWeight: 700 }}>
-            Remove Student Profile?
-          </DialogTitle>
-          <DialogContent>
-            <DialogContentText id="delete-dialog-description">
-              Are you sure you want to remove the student <strong>{fullName}</strong> (Reg. No: {student.registrationNumber})? This action will vacate their assigned bed allocation, delete their linked system login account, and remove all student records. This action cannot be undone.
-            </DialogContentText>
-          </DialogContent>
-          <DialogActions sx={{ px: 3, pb: 2 }}>
-            <Button 
-              onClick={() => setDeleteOpen(false)} 
-              disabled={deleting}
-              sx={{ textTransform: 'none', fontWeight: 600, color: 'text.secondary' }}
-            >
-              Cancel
-            </Button>
-            <Button 
-              onClick={handleDeleteStudent} 
-              disabled={deleting}
-              color="error" 
-              variant="contained" 
-              autoFocus
-              sx={{ 
-                backgroundColor: '#DC2626', 
-                '&:hover': { backgroundColor: '#B91C1C' },
-                textTransform: 'none', 
-                fontWeight: 600,
-                boxShadow: 'none'
-              }}
-            >
-              {deleting ? 'Removing...' : 'Remove Student'}
-            </Button>
-          </DialogActions>
-        </Dialog>
+          <Box
+            sx={{
+              position: 'relative',
+              width: { xs: '90%', sm: '450px' },
+              maxWidth: '95vw',
+              backgroundColor: 'background.paper',
+              borderRadius: '16px',
+              boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04)',
+              outline: 'none',
+              zIndex: 1401,
+              p: 1,
+            }}
+          >
+            <DialogTitle id="delete-dialog-title" sx={{ fontWeight: 700 }}>
+              Remove Student Profile?
+            </DialogTitle>
+            <DialogContent>
+              <DialogContentText id="delete-dialog-description">
+                Are you sure you want to remove the student <strong>{fullName}</strong> (Reg. No: {student.registrationNumber})? This action will vacate their assigned bed allocation, delete their linked system login account, and remove all student records. This action cannot be undone.
+              </DialogContentText>
+            </DialogContent>
+            <DialogActions sx={{ px: 3, pb: 2 }}>
+              <Button 
+                onClick={() => setDeleteOpen(false)} 
+                disabled={deleting}
+                sx={{ textTransform: 'none', fontWeight: 600, color: 'text.secondary' }}
+              >
+                Cancel
+              </Button>
+              <Button 
+                onClick={handleDeleteStudent} 
+                disabled={deleting}
+                color="error" 
+                variant="contained" 
+                autoFocus
+                sx={{ 
+                  backgroundColor: '#DC2626', 
+                  '&:hover': { backgroundColor: '#B91C1C' },
+                  textTransform: 'none', 
+                  fontWeight: 600,
+                  boxShadow: 'none'
+                }}
+              >
+                {deleting ? 'Removing...' : 'Remove Student'}
+              </Button>
+            </DialogActions>
+          </Box>
+        </Modal>
       )}
     </Box>
   );

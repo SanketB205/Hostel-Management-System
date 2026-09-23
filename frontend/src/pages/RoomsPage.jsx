@@ -1,5 +1,6 @@
-import React, { useState, useMemo } from 'react';
-import { Box, Typography, Card, Divider, CircularProgress, Alert } from '@mui/material';
+import React, { useState, useMemo, useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
+import { Box, Typography, Card, Divider, CircularProgress, Alert, Snackbar } from '@mui/material';
 import { useRoomContext } from '../contexts/RoomContext';
 import { useAuth } from '../contexts/AuthContext';
 import { hostel } from '../api';
@@ -12,6 +13,7 @@ import BulkRoomDrawer from '../components/rooms/BulkRoomDrawer';
 
 export default function RoomsPage() {
   const { user } = useAuth();
+  const location = useLocation();
   const { blocks, loading, error, fetchBlocks, fetchBlockDetails } = useRoomContext();
   const isAdmin = user?.role === 'admin';
 
@@ -25,6 +27,20 @@ export default function RoomsPage() {
 
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [isBulkDrawerOpen, setIsBulkDrawerOpen] = useState(false);
+  const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
+
+  // Show success message from navigation state (e.g., after block deletion)
+  useEffect(() => {
+    if (location.state?.successMessage) {
+      setSnackbar({
+        open: true,
+        message: location.state.successMessage,
+        severity: 'success'
+      });
+      // Clear the state to prevent showing the message again on refresh
+      window.history.replaceState({}, document.title);
+    }
+  }, [location]);
 
   const handleResetFilters = () =>
     setFilters({ search: '', block: 'All Blocks', floor: 'All Floors', roomType: 'All Types', status: 'All Status' });
@@ -289,6 +305,23 @@ export default function RoomsPage() {
           />
         </>
       )}
+
+      {/* Success/Error Snackbar */}
+      <Snackbar
+        open={snackbar.open}
+        autoHideDuration={4000}
+        onClose={() => setSnackbar(prev => ({ ...prev, open: false }))}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+      >
+        <Alert 
+          severity={snackbar.severity} 
+          variant="filled" 
+          sx={{ width: '100%' }}
+          onClose={() => setSnackbar(prev => ({ ...prev, open: false }))}
+        >
+          {snackbar.message}
+        </Alert>
+      </Snackbar>
     </Box>
   );
 }
