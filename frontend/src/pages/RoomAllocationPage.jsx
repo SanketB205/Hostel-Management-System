@@ -186,12 +186,14 @@ export default function RoomAllocationPage() {
               <TextField
                 size="small"
                 placeholder="Search allocations..."
-                InputProps={{
-                  startAdornment: (
-                    <InputAdornment position="start">
-                      <Search size={18} />
-                    </InputAdornment>
-                  ),
+                slotProps={{
+                  input: {
+                    startAdornment: (
+                      <InputAdornment position="start">
+                        <Search size={18} />
+                      </InputAdornment>
+                    ),
+                  }
                 }}
                 sx={{ width: 250 }}
               />

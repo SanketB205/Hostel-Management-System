@@ -541,12 +541,14 @@ export default function StaffRegistrationPage() {
                           label="Password *"
                           error={!!errors.password}
                           helperText={errors.password?.message}
-                          InputProps={{
-                            endAdornment: (
-                              <IconButton onClick={() => setShowPassword(!showPassword)} edge="end">
-                                {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-                              </IconButton>
-                            )
+                          slotProps={{
+                            input: {
+                              endAdornment: (
+                                <IconButton onClick={() => setShowPassword(!showPassword)} edge="end">
+                                  {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                                </IconButton>
+                              )
+                            }
                           }}
                         />
                       )} />
@@ -560,12 +562,14 @@ export default function StaffRegistrationPage() {
                           label="Confirm Password *"
                           error={!!errors.confirmPassword}
                           helperText={errors.confirmPassword?.message}
-                          InputProps={{
-                            endAdornment: (
-                              <IconButton onClick={() => setShowConfirmPassword(!showConfirmPassword)} edge="end">
-                                {showConfirmPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-                              </IconButton>
-                            )
+                          slotProps={{
+                            input: {
+                              endAdornment: (
+                                <IconButton onClick={() => setShowConfirmPassword(!showConfirmPassword)} edge="end">
+                                  {showConfirmPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                                </IconButton>
+                              )
+                            }
                           }}
                         />
                       )} />

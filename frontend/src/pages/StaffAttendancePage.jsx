@@ -289,12 +289,14 @@ export default function StaffAttendancePage() {
                   size="small"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  InputProps={{
-                    startAdornment: (
-                      <InputAdornment position="start">
-                        <Search size={18} />
-                      </InputAdornment>
-                    ),
+                  slotProps={{
+                    input: {
+                      startAdornment: (
+                        <InputAdornment position="start">
+                          <Search size={18} />
+                        </InputAdornment>
+                      ),
+                    }
                   }}
                   sx={{ width: { xs: '100%', sm: 250 } }}
                 />
