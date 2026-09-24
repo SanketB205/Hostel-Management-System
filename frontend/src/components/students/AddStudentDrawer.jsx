@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Drawer, Box, Typography, IconButton, Button, TextField, MenuItem, 
-  useTheme, styled, CircularProgress, Card, CardContent
+  useTheme, styled, CircularProgress, Card, CardContent, Chip
 } from '@mui/material';
 import { 
   ArrowLeft, Upload, CheckCircle2, User, GraduationCap, Users, 
-  Home, CreditCard, FileText, Save, RotateCcw, Settings2,
+  Home, CreditCard, FileText, Save, RotateCcw, Settings2, Plus, Trash2,
 } from 'lucide-react';
 import { useForm, Controller } from 'react-hook-form';
 import { yupResolver } from '@hookform/resolvers/yup';
@@ -16,6 +16,7 @@ import { useRoomContext } from '../../contexts/RoomContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { departments as departmentsApi, students as studentsApi } from '../../api';
 import DepartmentManagementModal from './DepartmentManagementModal';
+import RecordPaymentModal from './RecordPaymentModal';
 
 // Styled components
 const FormContainer = styled(Box)(({ theme }) => ({
@@ -117,9 +118,7 @@ const schema = yup.object().shape({
   status: yup.string().required('Status is required'),
   
   // Fee
-  totalFees: yup.number().typeError('Must be a number').nullable(),
-  initialDeposit: yup.number().typeError('Must be a number').nullable(),
-  paymentStatus: yup.string().nullable(),
+  totalBillable: yup.number().typeError('Must be a number').required('Total billable amount is required').positive('Must be a positive amount'),
 });
 
 export default function AddStudentDrawer({ open, onClose, onSave }) {
@@ -140,6 +139,11 @@ export default function AddStudentDrawer({ open, onClose, onSave }) {
   const [deptModalOpen, setDeptModalOpen] = useState(false);
   const [nextRegNo, setNextRegNo] = useState('');
 
+  // Payment state
+  const [recordPaymentNow, setRecordPaymentNow] = useState(false);
+  const [payments, setPayments] = useState([]);
+  const [paymentModalOpen, setPaymentModalOpen] = useState(false);
+
   const loadDepts = useCallback(async () => {
     try {
       const res = await departmentsApi.list({ status: 'Active' });
@@ -154,7 +158,7 @@ export default function AddStudentDrawer({ open, onClose, onSave }) {
       departmentId: '', courseId: '', yearOfStudy: '', admissionDate: null,
       parentName: '', relationship: '', parentPhone: '', parentEmail: '',
       hostelBlock: '', floorNumber: '', roomNumber: '', bedNumber: '', allocationDate: null, status: 'Present',
-      totalFees: '', initialDeposit: '', paymentStatus: 'Pending'
+      totalBillable: ''
     }
   });
 
@@ -184,6 +188,16 @@ export default function AddStudentDrawer({ open, onClose, onSave }) {
   const watchBlock = watch('hostelBlock');
   const watchFloor = watch('floorNumber');
   const watchRoom = watch('roomNumber');
+  const watchTotalBillable = watch('totalBillable');
+
+  // Payment calculations
+  const totalPaid = payments.reduce((sum, p) => sum + p.amount, 0);
+  const balanceDue = Math.max(0, (parseFloat(watchTotalBillable) || 0) - totalPaid);
+  const paymentStatus = totalPaid === 0 ? 'Pending' : balanceDue === 0 ? 'Paid in Full' : 'Partial';
+
+  const handleAddPayment = (payment) => {
+    setPayments(prev => [payment, ...prev]);
+  };
 
   // When department changes → reload filtered courses
   useEffect(() => {
@@ -250,7 +264,7 @@ export default function AddStudentDrawer({ open, onClose, onSave }) {
     // Mock API call
     await new Promise(resolve => setTimeout(resolve, 800));
     
-    const result = await onSave({ ...data, uploadedFiles });
+    const result = await onSave({ ...data, uploadedFiles, payments });
     setIsSubmitting(false);
     if (result?.success === false) return;
     
@@ -271,6 +285,8 @@ export default function AddStudentDrawer({ open, onClose, onSave }) {
     setUploadedFiles({});
     setNextRegNo('');
     setAllocatedBeds([]);
+    setRecordPaymentNow(false);
+    setPayments([]);
     onClose();
   };
 
@@ -282,7 +298,8 @@ export default function AddStudentDrawer({ open, onClose, onSave }) {
   };
 
   return (
-    <Drawer
+    <>
+      <Drawer
       anchor="right"
       open={open}
       onClose={handleClose}
@@ -346,8 +363,10 @@ export default function AddStudentDrawer({ open, onClose, onSave }) {
                       label="Registration Number"
                       value={nextRegNo || field.value || 'Generating...'}
                       disabled
-                      InputProps={{
-                        readOnly: true,
+                      slotProps={{
+                        input: {
+                          readOnly: true,
+                        }
                       }}
                       helperText="Auto-generated sequentially per year (e.g. HS-26-001)"
                     />
@@ -607,21 +626,216 @@ export default function AddStudentDrawer({ open, onClose, onSave }) {
                   <IconWrapper><CreditCard size={24} /></IconWrapper>
                   <Typography variant="h6" sx={{ fontWeight: 700 }}>Fee Information</Typography>
                 </SectionHeaderBox>
-                <GridBox>
-                  <Controller name="totalFees" control={control} render={({ field }) => (
-                    <TextField {...field} fullWidth label="Total Fees" error={!!errors.totalFees} helperText={errors.totalFees?.message} />
+                
+                {/* Total Billable */}
+                <Box sx={{ mb: 3 }}>
+                  <Controller name="totalBillable" control={control} render={({ field }) => (
+                    <TextField 
+                      {...field} 
+                      fullWidth 
+                      label="Total Billable *" 
+                      type="number"
+                      error={!!errors.totalBillable} 
+                      helperText={errors.totalBillable?.message || 'This is the total hostel fee that the student is required to pay.'}
+                      slotProps={{
+                        input: {
+                          startAdornment: <Typography sx={{ mr: 1, color: 'text.secondary' }}>₹</Typography>
+                        }
+                      }}
+                    />
                   )} />
-                  <Controller name="initialDeposit" control={control} render={({ field }) => (
-                    <TextField {...field} fullWidth label="Initial Deposit" error={!!errors.initialDeposit} helperText={errors.initialDeposit?.message} />
-                  )} />
-                  <Controller name="paymentStatus" control={control} render={({ field }) => (
-                    <TextField {...field} select fullWidth label="Payment Status" error={!!errors.paymentStatus} helperText={errors.paymentStatus?.message}>
-                      <MenuItem value="Paid">Paid</MenuItem>
-                      <MenuItem value="Partial">Partial</MenuItem>
-                      <MenuItem value="Pending">Pending</MenuItem>
-                    </TextField>
-                  )} />
-                </GridBox>
+                </Box>
+
+                {/* Want to record payment now? */}
+                <Box sx={{ mb: 3 }}>
+                  <Typography variant="body2" sx={{ fontWeight: 600, mb: 1.5 }}>
+                    Want to record payment now?
+                  </Typography>
+                  <Box sx={{ display: 'flex', gap: 3 }}>
+                    <Box 
+                      onClick={() => setRecordPaymentNow(false)}
+                      sx={{ 
+                        display: 'flex', 
+                        alignItems: 'center', 
+                        gap: 1, 
+                        cursor: 'pointer',
+                        '&:hover': { opacity: 0.8 }
+                      }}
+                    >
+                      <Box sx={{
+                        width: 20,
+                        height: 20,
+                        borderRadius: '50%',
+                        border: `2px solid ${!recordPaymentNow ? '#4F46E5' : theme.palette.divider}`,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        backgroundColor: !recordPaymentNow ? '#4F46E5' : 'transparent'
+                      }}>
+                        {!recordPaymentNow && (
+                          <Box sx={{ 
+                            width: 8, 
+                            height: 8, 
+                            borderRadius: '50%', 
+                            backgroundColor: 'white' 
+                          }} />
+                        )}
+                      </Box>
+                      <Typography variant="body2">No</Typography>
+                    </Box>
+                    <Box 
+                      onClick={() => setRecordPaymentNow(true)}
+                      sx={{ 
+                        display: 'flex', 
+                        alignItems: 'center', 
+                        gap: 1, 
+                        cursor: 'pointer',
+                        '&:hover': { opacity: 0.8 }
+                      }}
+                    >
+                      <Box sx={{
+                        width: 20,
+                        height: 20,
+                        borderRadius: '50%',
+                        border: `2px solid ${recordPaymentNow ? '#4F46E5' : theme.palette.divider}`,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        backgroundColor: recordPaymentNow ? '#4F46E5' : 'transparent'
+                      }}>
+                        {recordPaymentNow && (
+                          <Box sx={{ 
+                            width: 8, 
+                            height: 8, 
+                            borderRadius: '50%', 
+                            backgroundColor: 'white' 
+                          }} />
+                        )}
+                      </Box>
+                      <Typography variant="body2">Yes</Typography>
+                    </Box>
+                  </Box>
+                </Box>
+
+                {/* Record Payment Button */}
+                {recordPaymentNow && balanceDue > 0 && (
+                  <Box sx={{ mb: 3 }}>
+                    <Button
+                      variant="outlined"
+                      startIcon={<Plus size={18} />}
+                      onClick={() => setPaymentModalOpen(true)}
+                      sx={{
+                        borderColor: '#4F46E5',
+                        color: '#4F46E5',
+                        '&:hover': {
+                          borderColor: '#4338CA',
+                          backgroundColor: 'rgba(79,70,229,0.04)'
+                        },
+                        borderRadius: '8px',
+                        textTransform: 'none',
+                        fontWeight: 600,
+                        px: 3,
+                        py: 1
+                      }}
+                    >
+                      Record Payment
+                    </Button>
+                  </Box>
+                )}
+
+                {/* Recorded Payments List */}
+                {payments.length > 0 && (
+                  <Box sx={{ mb: 3 }}>
+                    <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', mb: 1 }}>
+                      Recorded Payments ({payments.length})
+                    </Typography>
+                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                      {payments.map((p, idx) => (
+                        <Box
+                          key={p.id || idx}
+                          sx={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            p: 1.5,
+                            borderRadius: '8px',
+                            border: `1px solid ${theme.palette.divider}`,
+                            backgroundColor: theme.palette.mode === 'light' ? '#FFFFFF' : 'rgba(255,255,255,0.03)'
+                          }}
+                        >
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
+                            <Chip label={p.paymentMode} size="small" sx={{ fontWeight: 600 }} />
+                            <Typography variant="body2" sx={{ fontWeight: 700, color: '#16A34A' }}>
+                              ₹{Number(p.amount).toLocaleString('en-IN')}
+                            </Typography>
+                            {p.transactionId && (
+                              <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                                Ref: {p.transactionId}
+                              </Typography>
+                            )}
+                          </Box>
+                          <IconButton
+                            size="small"
+                            onClick={() => setPayments(prev => prev.filter((_, i) => i !== idx))}
+                            sx={{ color: '#DC2626', '&:hover': { backgroundColor: 'rgba(220,38,38,0.08)' } }}
+                            title="Remove Payment"
+                          >
+                            <Trash2 size={16} />
+                          </IconButton>
+                        </Box>
+                      ))}
+                    </Box>
+                  </Box>
+                )}
+
+                {/* Payment Summary */}
+                {watchTotalBillable && (
+                  <Box sx={{
+                    backgroundColor: theme.palette.mode === 'light' ? '#F9FAFB' : 'rgba(255,255,255,0.02)',
+                    border: `1px solid ${theme.palette.divider}`,
+                    borderRadius: '12px',
+                    p: 3
+                  }}>
+                    <GridBox sx={{ gap: 2 }}>
+                      <Box>
+                        <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                          Total Billable
+                        </Typography>
+                        <Typography variant="h6" sx={{ fontWeight: 700, color: 'text.primary', mt: 0.5 }}>
+                          ₹{Number(watchTotalBillable || 0).toLocaleString('en-IN')}
+                        </Typography>
+                      </Box>
+                      <Box>
+                        <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                          Total Paid
+                        </Typography>
+                        <Typography variant="h6" sx={{ fontWeight: 700, color: '#16A34A', mt: 0.5 }}>
+                          ₹{totalPaid.toLocaleString('en-IN')}
+                        </Typography>
+                      </Box>
+                      <Box>
+                        <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                          Balance Due
+                        </Typography>
+                        <Typography variant="h6" sx={{ fontWeight: 700, color: balanceDue > 0 ? '#DC2626' : '#16A34A', mt: 0.5 }}>
+                          ₹{balanceDue.toLocaleString('en-IN')}
+                        </Typography>
+                      </Box>
+                      <Box>
+                        <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                          Payment Status
+                        </Typography>
+                        <Typography variant="h6" sx={{ 
+                          fontWeight: 700, 
+                          color: paymentStatus === 'Paid in Full' ? '#16A34A' : paymentStatus === 'Partial' ? '#D97706' : '#DC2626',
+                          mt: 0.5
+                        }}>
+                          {paymentStatus}
+                        </Typography>
+                      </Box>
+                    </GridBox>
+                  </Box>
+                )}
               </CardContent>
             </SectionCard>
 
@@ -744,5 +958,16 @@ export default function AddStudentDrawer({ open, onClose, onSave }) {
         </Box>
       </Box>
     </Drawer>
+
+    {/* Record Payment Modal */}
+    <RecordPaymentModal
+      open={paymentModalOpen}
+      onClose={() => setPaymentModalOpen(false)}
+      onSave={handleAddPayment}
+      balanceDue={balanceDue}
+      studentName="New Student"
+      registrationNumber={nextRegNo}
+    />
+    </>
   );
 }

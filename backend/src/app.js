@@ -12,6 +12,7 @@ import { staffRouter } from './routes/staff.routes.js';
 import { bootstrapRouter } from './routes/bootstrap.routes.js';
 import { complaintsRouter } from './routes/complaints.routes.js';
 import { departmentsRouter } from './routes/departments.routes.js';
+import paymentsRouter from './routes/payments.routes.js';
 
 export const app = express();
 
@@ -29,6 +30,7 @@ app.use('/api/allocations', allocationsRouter);
 app.use('/api/bootstrap', bootstrapRouter);
 app.use('/api/complaints', complaintsRouter);
 app.use('/api/departments', departmentsRouter);
+app.use('/api/payments', paymentsRouter);
 
 app.use(notFound);
 app.use(errorHandler);

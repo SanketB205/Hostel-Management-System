@@ -185,3 +185,15 @@ export const departments = {
   toggleCourseStatus: (courseId) => request('PATCH', `/departments/courses/${courseId}/status`),
   deleteCourse: (courseId) => request('DELETE', `/departments/courses/${courseId}`),
 };
+
+// ── Payments ──────────────────────────────────────────────────────────────────
+export const payments = {
+  /** Get payment summary and history for a student */
+  getByStudent: (studentId) => request('GET', `/payments/student/${studentId}`),
+  
+  /** Create a new payment record */
+  create: (paymentData) => request('POST', '/payments', paymentData),
+  
+  /** Delete a payment record (Admin only) */
+  delete: (paymentId) => request('DELETE', `/payments/${paymentId}`),
+};

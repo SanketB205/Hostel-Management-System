@@ -8,10 +8,11 @@ import {
 } from '@mui/material';
 import {
   ArrowLeft, User, GraduationCap, Users,
-  Home, CreditCard, FileText, Edit, Printer, Download, KeyRound, Trash2
+  Home, FileText, Edit, Printer, Download, KeyRound, Trash2
 } from 'lucide-react';
 import { students as studentsApi } from '../api';
 import { useAuth } from '../contexts/AuthContext';
+import PaymentLedger from '../components/students/PaymentLedger';
 
 // ── Styled helpers ─────────────────────────────────────────────────────────────
 
@@ -347,34 +348,12 @@ export default function ViewStudentDetailsPage() {
           </CardContent>
         </SectionCard>
 
-        {/* ── SECTION 5: Fee Information ── */}
-        <SectionCard>
-          <CardContent sx={{ p: { xs: 2, sm: 4 } }}>
-            <SectionHeaderBox>
-              <IconWrapper><CreditCard size={24} /></IconWrapper>
-              <Typography variant="h6" sx={{ fontWeight: 700 }}>Fee Information</Typography>
-            </SectionHeaderBox>
-            <GridBox>
-              <InfoField label="Total Fees" value={fmtCurrency(student.totalFees)} />
-              <InfoField label="Initial Deposit" value={fmtCurrency(student.initialDeposit)} />
-              <InfoField label="Remaining Fees" value={fmtCurrency(student.totalFees !== null && student.initialDeposit !== null ? student.totalFees - student.initialDeposit : null)} />
-              <InfoField
-                label="Payment Status"
-                chip
-                value={
-                  <Chip
-                    label={student.initialDeposit === 0 ? 'Not paid' : (student.paymentStatus || 'Pending')}
-                    sx={{
-                      fontWeight: 600,
-                      backgroundColor: student.paymentStatus === 'Paid' ? 'rgba(34,197,94,0.1)' : student.initialDeposit === 0 ? 'rgba(239,68,68,0.1)' : student.paymentStatus === 'Partial' ? 'rgba(245,158,11,0.1)' : 'rgba(239,68,68,0.1)',
-                      color: student.paymentStatus === 'Paid' ? '#16A34A' : student.initialDeposit === 0 ? '#DC2626' : student.paymentStatus === 'Partial' ? '#D97706' : '#DC2626',
-                    }}
-                  />
-                }
-              />
-            </GridBox>
-          </CardContent>
-        </SectionCard>
+        {/* ── SECTION 5: Payment & Collection Ledger ── */}
+        <PaymentLedger 
+          studentId={student.id}
+          studentName={fullName}
+          registrationNumber={student.registrationNumber}
+        />
 
         {/* ── SECTION 6: Documents ── */}
         <SectionCard>

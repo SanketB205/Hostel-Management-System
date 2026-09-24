@@ -224,9 +224,30 @@ export const getNextRegistrationNumberPreview = asyncHandler(async (req, res) =>
 // ── Create student ────────────────────────────────────────────────────────────
 
 export const createStudent = asyncHandler(async (req, res) => {
-  const { firstName, lastName, dateOfBirth, email, course, year } = req.body;
+  const { firstName, lastName, dateOfBirth, email, course, year, totalBillable } = req.body;
   if (!firstName || !lastName || !dateOfBirth || !email || !course || !year) {
     return res.status(400).json({ message: 'Name, date of birth, email, course, and year are required.' });
+  }
+
+  // Validate totalBillable if provided
+  if (totalBillable !== undefined && totalBillable !== null && totalBillable !== '') {
+    const billable = parseFloat(totalBillable);
+    if (isNaN(billable) || billable < 0) {
+      return res.status(400).json({ message: 'Total billable must be a valid non-negative amount.' });
+    }
+  }
+
+  // Validate payments if provided
+  const payments = req.body.payments || [];
+  if (payments.length > 0) {
+    for (const payment of payments) {
+      if (!payment.amount || parseFloat(payment.amount) <= 0) {
+        return res.status(400).json({ message: 'Each payment must have a valid positive amount.' });
+      }
+      if (!payment.paymentMode) {
+        return res.status(400).json({ message: 'Each payment must have a payment mode.' });
+      }
+    }
   }
 
   const academicFields = await resolveAcademicFields(req.body);
@@ -249,8 +270,33 @@ export const createStudent = asyncHandler(async (req, res) => {
       userId: user.id,
     }, { transaction });
 
+    // Create initial payments if provided
+    if (payments.length > 0) {
+      for (let i = 0; i < payments.length; i++) {
+        const payment = payments[i];
+        await Payment.create({
+          studentId: student.id,
+          receiptNo: `${registrationNumber}-${Date.now()}-${i + 1}`, // Generate unique receipt number
+          amount: parseFloat(payment.amount),
+          paymentMode: payment.paymentMode || 'Cash',
+          status: 'Success', // Initial payments are marked as successful
+          transactionId: payment.transactionId || payment.reference || null,
+          paymentDate: payment.paymentDate || payment.date || new Date(),
+          notes: payment.notes || null,
+          receivedBy: payment.receivedBy || 'Admin',
+        }, { transaction });
+      }
+    }
+
     const allocationData = req.body.allocation;
-    if (!allocationData) return student;
+    if (!allocationData) {
+      // Fetch student with payments for response
+      const studentWithPayments = await Student.findByPk(student.id, {
+        include: [{ model: Payment, as: 'payments' }],
+        transaction
+      });
+      return studentWithPayments;
+    }
 
     const roomNumber = String(allocationData.roomNumber || '').trim().toUpperCase();
     const room = await Room.findOne({ where: { number: roomNumber }, transaction, lock: transaction.LOCK.UPDATE });
@@ -278,7 +324,12 @@ export const createStudent = asyncHandler(async (req, res) => {
       status: occupiedBeds + 1 >= room.capacity ? 'Full' : 'Occupied',
     }, { transaction });
 
-    return student;
+    // Fetch student with payments for response
+    const studentWithPayments = await Student.findByPk(student.id, {
+      include: [{ model: Payment, as: 'payments' }],
+      transaction
+    });
+    return studentWithPayments;
   });
 
   res.status(201).json({ data: result });

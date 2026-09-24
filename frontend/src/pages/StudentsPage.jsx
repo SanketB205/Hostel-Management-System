@@ -136,9 +136,8 @@ export default function StudentsPage() {
         guardianPhone:        newStudentData.parentPhone,
         guardianEmail:        newStudentData.parentEmail || null,
         status:               newStudentData.status,
-        totalFees:            newStudentData.totalFees !== '' && newStudentData.totalFees !== null && newStudentData.totalFees !== undefined ? Number(newStudentData.totalFees) : null,
-        initialDeposit:       newStudentData.initialDeposit !== '' && newStudentData.initialDeposit !== null && newStudentData.initialDeposit !== undefined ? Number(newStudentData.initialDeposit) : null,
-        paymentStatus:        newStudentData.paymentStatus || 'Pending',
+        totalBillable:        newStudentData.totalBillable !== '' && newStudentData.totalBillable !== null && newStudentData.totalBillable !== undefined ? Number(newStudentData.totalBillable) : null,
+        payments:             newStudentData.payments || [], // Array of payment objects from RecordPaymentModal
         allocation: {
           roomNumber:  newStudentData.roomNumber,
           bedNumber:   newStudentData.bedNumber,

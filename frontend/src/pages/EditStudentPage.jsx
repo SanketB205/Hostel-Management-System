@@ -17,7 +17,7 @@ import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
 import dayjs from 'dayjs';
 import { useRoomContext } from '../contexts/RoomContext';
 import { useAuth } from '../contexts/AuthContext';
-import { students as studentsApi, departments as departmentsApi } from '../api';
+import { students as studentsApi, departments as departmentsApi, payments as paymentsApi } from '../api';
 import DepartmentManagementModal from '../components/students/DepartmentManagementModal';
 
 // Styled components (identical to AddStudentDrawer, custom wrapper to negate page margins)
@@ -126,9 +126,7 @@ const schema = yup.object().shape({
   bedNumber: yup.string().nullable(),
   allocationDate: yup.date().nullable(),
   status: yup.string().required('Status is required'),
-  totalFees: yup.number().typeError('Must be a number').nullable(),
-  initialDeposit: yup.number().typeError('Must be a number').nullable(),
-  paymentStatus: yup.string().nullable(),
+  totalBillable: yup.number().typeError('Must be a number').nullable(),
 });
 
 export default function EditStudentPage() {
@@ -153,6 +151,10 @@ export default function EditStudentPage() {
   const [student, setStudent] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [uploadedFiles, setUploadedFiles] = useState({});
+  
+  // Payment data state
+  const [paymentData, setPaymentData] = useState(null);
+  const [loadingPayments, setLoadingPayments] = useState(false);
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
 
   // Departments / courses state
@@ -187,6 +189,12 @@ export default function EditStudentPage() {
   const watchBlock = watch('hostelBlock');
   const watchFloor = watch('floorNumber');
   const watchRoom = watch('roomNumber');
+  const watchTotalBillable = watch('totalBillable');
+
+  // Payment calculations
+  const totalPaid = paymentData?.totalPaid || 0;
+  const calculatedBalanceDue = Math.max(0, (parseFloat(watchTotalBillable) || 0) - totalPaid);
+  const calculatedPaymentStatus = totalPaid === 0 ? 'Pending' : calculatedBalanceDue === 0 ? 'Paid in Full' : 'Partial';
 
   // When department changes → reload filtered courses
   useEffect(() => {
@@ -217,6 +225,18 @@ export default function EditStudentPage() {
         if (active) {
           const s = studentRes.data;
           setStudent(s);
+          
+          // Fetch payment data
+          setLoadingPayments(true);
+          try {
+            const paymentRes = await paymentsApi.getByStudent(s.id);
+            setPaymentData(paymentRes.data);
+          } catch (err) {
+            console.error('Failed to load payment data:', err);
+          } finally {
+            setLoadingPayments(false);
+          }
+          
           const activeAlloc = (s.allocations || []).find(a => a.status === 'active');
 
           // Always load all active departments
@@ -278,9 +298,7 @@ export default function EditStudentPage() {
             bedNumber: activeAlloc?.bedNumber || '',
             allocationDate: activeAlloc?.allocatedAt ? dayjs(activeAlloc.allocatedAt) : null,
             status: ['Present', 'Absent', 'Outing', 'Leave', 'Late'].includes(s.status) ? s.status : 'Present',
-            totalFees: s.totalFees !== null && s.totalFees !== undefined ? s.totalFees : '',
-            initialDeposit: s.initialDeposit !== null && s.initialDeposit !== undefined ? s.initialDeposit : '',
-            paymentStatus: s.paymentStatus || 'Pending'
+            totalBillable: s.totalBillable !== null && s.totalBillable !== undefined ? s.totalBillable : (s.totalFees || '')
           });
         }
       } catch (err) {
@@ -421,6 +439,18 @@ export default function EditStudentPage() {
   const onSubmit = async (data) => {
     setIsSubmitting(true);
     
+    // Validate totalBillable doesn't go below total paid
+    const newBillable = parseFloat(data.totalBillable) || 0;
+    if (newBillable < totalPaid) {
+      setSnackbar({
+        open: true,
+        message: `Total Billable (₹${newBillable.toLocaleString('en-IN')}) cannot be less than the amount already paid (₹${totalPaid.toLocaleString('en-IN')}).`,
+        severity: 'error'
+      });
+      setIsSubmitting(false);
+      return;
+    }
+    
     const dobRaw = data.dob;
     let dateOfBirth;
     if (dobRaw && typeof dobRaw.format === 'function') {
@@ -471,9 +501,7 @@ export default function EditStudentPage() {
         guardianPhone:        data.parentPhone,
         guardianEmail:        data.parentEmail || null,
         status:               data.status,
-        totalFees:            data.totalFees !== '' && data.totalFees !== null && data.totalFees !== undefined ? Number(data.totalFees) : null,
-        initialDeposit:       data.initialDeposit !== '' && data.initialDeposit !== null && data.initialDeposit !== undefined ? Number(data.initialDeposit) : null,
-        paymentStatus:        data.paymentStatus || 'Pending',
+        totalBillable:        data.totalBillable !== '' && data.totalBillable !== null && data.totalBillable !== undefined ? Number(data.totalBillable) : null,
       };
 
       if (transferModeEnabled) {
@@ -589,8 +617,10 @@ export default function EditStudentPage() {
                       fullWidth
                       label="Registration Number"
                       disabled
-                      InputProps={{
-                        readOnly: true,
+                      slotProps={{
+                        input: {
+                          readOnly: true,
+                        }
                       }}
                       helperText="Registration number is permanent and cannot be changed"
                     />
@@ -916,21 +946,108 @@ export default function EditStudentPage() {
                   <IconWrapper><CreditCard size={24} /></IconWrapper>
                   <Typography variant="h6" sx={{ fontWeight: 700 }}>Fee Information</Typography>
                 </SectionHeaderBox>
-                <GridBox>
-                  <Controller name="totalFees" control={control} render={({ field }) => (
-                    <TextField {...field} fullWidth label="Total Fees" error={!!errors.totalFees} helperText={errors.totalFees?.message} />
-                  )} />
-                  <Controller name="initialDeposit" control={control} render={({ field }) => (
-                    <TextField {...field} fullWidth label="Initial Deposit" error={!!errors.initialDeposit} helperText={errors.initialDeposit?.message} />
-                  )} />
-                  <Controller name="paymentStatus" control={control} render={({ field }) => (
-                    <TextField {...field} select fullWidth label="Payment Status" error={!!errors.paymentStatus} helperText={errors.paymentStatus?.message}>
-                      <MenuItem value="Paid">Paid</MenuItem>
-                      <MenuItem value="Partial">Partial</MenuItem>
-                      <MenuItem value="Pending">Pending</MenuItem>
-                    </TextField>
-                  )} />
-                </GridBox>
+                {/* Total Billable Input */}
+                <Box sx={{ mb: 3 }}>
+                  <Controller 
+                    name="totalBillable" 
+                    control={control} 
+                    render={({ field }) => (
+                      <TextField 
+                        {...field} 
+                        fullWidth 
+                        label="Total Billable Amount" 
+                        type="number"
+                        error={!!errors.totalBillable} 
+                        helperText={errors.totalBillable?.message || "This is the total amount the student is responsible for paying"}
+                        slotProps={{
+                          input: {
+                            startAdornment: <Typography sx={{ mr: 1, color: 'text.secondary' }}>₹</Typography>
+                          }
+                        }}
+                      />
+                    )} 
+                  />
+                </Box>
+
+                {/* Read-only Payment Summary */}
+                {!loadingPayments && paymentData && (
+                  <Box sx={{ 
+                    p: 2.5, 
+                    bgcolor: 'background.default', 
+                    borderRadius: 2, 
+                    border: '1px solid', 
+                    borderColor: 'divider' 
+                  }}>
+                    <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 2, color: 'text.secondary' }}>
+                      Payment Summary
+                    </Typography>
+                    
+                    <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(3, 1fr)' }, gap: 2 }}>
+                      {/* Total Paid */}
+                      <Box>
+                        <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mb: 0.5 }}>
+                          Total Paid
+                        </Typography>
+                        <Typography variant="h6" sx={{ fontWeight: 700, color: 'success.main' }}>
+                          ₹{totalPaid.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </Typography>
+                      </Box>
+
+                      {/* Balance Due */}
+                      <Box>
+                        <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mb: 0.5 }}>
+                          Balance Due
+                        </Typography>
+                        <Typography 
+                          variant="h6" 
+                          sx={{ 
+                            fontWeight: 700, 
+                            color: calculatedBalanceDue > 0 ? 'error.main' : 'success.main' 
+                          }}
+                        >
+                          ₹{calculatedBalanceDue.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </Typography>
+                      </Box>
+
+                      {/* Payment Status */}
+                      <Box>
+                        <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mb: 0.5 }}>
+                          Payment Status
+                        </Typography>
+                        <Box
+                          sx={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            px: 1.5,
+                            py: 0.5,
+                            borderRadius: 1,
+                            bgcolor: 
+                              calculatedPaymentStatus === 'Paid in Full' ? 'success.main' :
+                              calculatedPaymentStatus === 'Partial' ? 'warning.main' : 'error.main',
+                            color: '#fff',
+                            fontSize: '0.875rem',
+                            fontWeight: 600,
+                            mt: 0.5
+                          }}
+                        >
+                          {calculatedPaymentStatus}
+                        </Box>
+                      </Box>
+                    </Box>
+
+                    <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mt: 2, fontStyle: 'italic' }}>
+                      Note: To record new payments or view payment history, use the Payment & Collection Ledger in the student details page.
+                    </Typography>
+                  </Box>
+                )}
+
+                {loadingPayments && (
+                  <Box sx={{ textAlign: 'center', py: 2 }}>
+                    <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+                      Loading payment information...
+                    </Typography>
+                  </Box>
+                )}
               </CardContent>
             </SectionCard>
 

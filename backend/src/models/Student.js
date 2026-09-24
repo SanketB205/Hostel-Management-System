@@ -24,7 +24,37 @@ export const Student = sequelize.define('Student', {
   guardianPhone: { type: DataTypes.STRING(20), allowNull: true, field: 'guardian_phone' },
   guardianEmail: { type: DataTypes.STRING(255), allowNull: true, field: 'guardian_email' },
   status: { type: DataTypes.ENUM('Present', 'Absent', 'Outing', 'Leave', 'Late', 'Not Marked'), allowNull: false, defaultValue: 'Present' },
+  totalBillable: { type: DataTypes.DECIMAL(10, 2), allowNull: true, field: 'total_billable', comment: 'Total hostel fee amount payable by the student' },
   totalFees: { type: DataTypes.INTEGER, allowNull: true, field: 'total_fees' },
   initialDeposit: { type: DataTypes.INTEGER, allowNull: true, field: 'initial_deposit' },
   paymentStatus: { type: DataTypes.ENUM('Paid', 'Partial', 'Pending'), allowNull: false, defaultValue: 'Pending', field: 'payment_status' },
-}, { tableName: 'students' });
+}, { 
+  tableName: 'students',
+  getterMethods: {
+    // Virtual field: Calculate total paid from successful payments
+    totalPaid() {
+      if (!this.payments || !Array.isArray(this.payments)) return 0;
+      return this.payments
+        .filter(p => p.status === 'Success')
+        .reduce((sum, p) => sum + parseFloat(p.amount || 0), 0);
+    },
+    // Virtual field: Calculate balance due
+    balanceDue() {
+      const billable = parseFloat(this.totalBillable || 0);
+      const paid = this.totalPaid;
+      return Math.max(0, billable - paid);
+    },
+    // Virtual field: Calculate payment status based on payments
+    calculatedPaymentStatus() {
+      const billable = parseFloat(this.totalBillable || 0);
+      if (billable === 0) return 'Pending';
+      
+      const paid = this.totalPaid;
+      const balance = this.balanceDue;
+      
+      if (paid === 0) return 'Pending';
+      if (balance === 0) return 'Paid in Full';
+      return 'Partial';
+    }
+  }
+});
