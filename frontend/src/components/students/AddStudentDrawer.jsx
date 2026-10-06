@@ -115,7 +115,6 @@ const schema = yup.object().shape({
   roomNumber: yup.string().required('Room number is required'),
   bedNumber: yup.string().required('Bed number is required'),
   allocationDate: yup.date().nullable().required('Allocation date is required'),
-  status: yup.string().required('Status is required'),
   
   // Fee
   totalBillable: yup.number().typeError('Must be a number').required('Total billable amount is required').positive('Must be a positive amount'),
@@ -157,7 +156,7 @@ export default function AddStudentDrawer({ open, onClose, onSave }) {
       firstName: '', lastName: '', regNo: '', gender: '', dob: null, email: '', phone: '', address: '',
       departmentId: '', courseId: '', yearOfStudy: '', admissionDate: null,
       parentName: '', relationship: '', parentPhone: '', parentEmail: '',
-      hostelBlock: '', floorNumber: '', roomNumber: '', bedNumber: '', allocationDate: null, status: 'Present',
+      hostelBlock: '', floorNumber: '', roomNumber: '', bedNumber: '', allocationDate: null,
       totalBillable: ''
     }
   });
@@ -209,10 +208,13 @@ export default function AddStudentDrawer({ open, onClose, onSave }) {
     }
   }, [watchDepartmentId, allDepts]);
 
+  const isRoomMaintenance = (room) =>
+    room.status === 'Maintenance' || room.operationalStatus === 'Maintenance';
+
   const availableBlocks = mockBlocks.filter(block =>
     (block.floors || []).some(floor =>
       (floor.rooms || []).some(room =>
-        (room.bedsOccupied || 0) < room.capacity && room.status !== 'Maintenance'
+        (room.bedsOccupied || 0) < room.capacity && !isRoomMaintenance(room)
       )
     )
   );
@@ -221,7 +223,7 @@ export default function AddStudentDrawer({ open, onClose, onSave }) {
   const availableFloors = selectedBlockObj
     ? (selectedBlockObj.floors || []).filter(floor =>
         (floor.rooms || []).some(room =>
-          (room.bedsOccupied || 0) < room.capacity && room.status !== 'Maintenance'
+          (room.bedsOccupied || 0) < room.capacity && !isRoomMaintenance(room)
         )
       )
     : [];
@@ -229,7 +231,7 @@ export default function AddStudentDrawer({ open, onClose, onSave }) {
   const selectedFloorObj = selectedBlockObj?.floors?.find(f => f.name === watchFloor);
   const availableRooms = selectedFloorObj
     ? (selectedFloorObj.rooms || []).filter(room =>
-        (room.bedsOccupied || 0) < room.capacity && room.status !== 'Maintenance'
+        (room.bedsOccupied || 0) < room.capacity && !isRoomMaintenance(room)
       )
     : [];
 
@@ -569,11 +571,15 @@ export default function AddStudentDrawer({ open, onClose, onSave }) {
                         setValue('bedNumber', '');
                       }}
                     >
-                      {availableRooms.map(room => (
-                        <MenuItem key={room.number} value={room.number}>
-                          {room.number} ({room.capacity - (room.bedsOccupied || 0)} beds left)
-                        </MenuItem>
-                      ))}
+                      {availableRooms.map(room => {
+                        const bedsLeft = room.capacity - (room.bedsOccupied || 0);
+                        const isReserved = room.operationalStatus === 'Reserved' || room.status === 'Reserved';
+                        return (
+                          <MenuItem key={room.number} value={room.number}>
+                            {room.number} ({bedsLeft} {bedsLeft === 1 ? 'bed' : 'beds'} left){isReserved ? ' (Reserved room)' : ''}
+                          </MenuItem>
+                        );
+                      })}
                     </TextField>
                   )} />
                   <Controller name="bedNumber" control={control} render={({ field }) => (
@@ -605,15 +611,6 @@ export default function AddStudentDrawer({ open, onClose, onSave }) {
                   <Controller name="allocationDate" control={control} render={({ field }) => (
                     <DatePicker label="Allocation Date *" value={field.value} onChange={(newValue) => field.onChange(newValue)}
                       slotProps={{ textField: { fullWidth: true, error: !!errors.allocationDate, helperText: errors.allocationDate?.message } }} />
-                  )} />
-                  <Controller name="status" control={control} render={({ field }) => (
-                    <TextField {...field} select fullWidth label="Student Status *" error={!!errors.status} helperText={errors.status?.message}>
-                      <MenuItem value="Present">Present</MenuItem>
-                      <MenuItem value="Outing">Outing</MenuItem>
-                      <MenuItem value="Leave">Leave</MenuItem>
-                      <MenuItem value="Late">Late</MenuItem>
-                      <MenuItem value="Absent">Absent</MenuItem>
-                    </TextField>
                   )} />
                 </GridBox>
               </CardContent>

@@ -11,6 +11,7 @@ import {
   deleteRoom,
   deleteBlock,
   getDashboardStats,
+  updateRoomOperationalStatus,
 } from '../controllers/hostel.controller.js';
 import { authenticate, authorize } from '../middleware/authenticate.js';
 
@@ -34,3 +35,5 @@ hostelRouter.post('/floors/:floorId/rooms', authorize('admin'), createRoom);
 hostelRouter.post('/rooms/bulk', authorize('admin'), bulkCreateRooms);
 hostelRouter.get('/rooms/:roomId/students', getRoomStudents);
 hostelRouter.delete('/rooms/:roomId', authorize('admin'), deleteRoom);
+hostelRouter.patch('/rooms/:roomId/operational-status', authorize('admin'), updateRoomOperationalStatus);
+

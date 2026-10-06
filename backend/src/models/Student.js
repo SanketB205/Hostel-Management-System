@@ -23,7 +23,7 @@ export const Student = sequelize.define('Student', {
   guardianRelationship: { type: DataTypes.STRING(50), allowNull: true, field: 'guardian_relationship' },
   guardianPhone: { type: DataTypes.STRING(20), allowNull: true, field: 'guardian_phone' },
   guardianEmail: { type: DataTypes.STRING(255), allowNull: true, field: 'guardian_email' },
-  status: { type: DataTypes.ENUM('Present', 'Absent', 'Outing', 'Leave', 'Late', 'Not Marked'), allowNull: false, defaultValue: 'Present' },
+  status: { type: DataTypes.ENUM('Present', 'Absent', 'Outing', 'Leave', 'Late', 'Not Marked'), allowNull: false, defaultValue: 'Not Marked' },
   totalBillable: { type: DataTypes.DECIMAL(10, 2), allowNull: true, field: 'total_billable', comment: 'Total hostel fee amount payable by the student' },
   totalFees: { type: DataTypes.INTEGER, allowNull: true, field: 'total_fees' },
   initialDeposit: { type: DataTypes.INTEGER, allowNull: true, field: 'initial_deposit' },

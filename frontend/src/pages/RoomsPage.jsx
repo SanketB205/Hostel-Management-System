@@ -102,6 +102,8 @@ export default function RoomsPage() {
         roomType: bulkData.roomType,
         capacity: bulkData.capacity,
         defaultStatus: bulkData.defaultStatus,
+        // Per-room overrides: { [roomNumber]: { roomType, capacity } }
+        roomCustomizations: bulkData.roomCustomizations || {},
       });
 
       await fetchBlocks();
@@ -122,6 +124,7 @@ export default function RoomsPage() {
       return { success: false, message: err.message };
     }
   };
+
 
   // ── Client-side filter ──────────────────────────────────────────────────────
   const filteredBlocks = useMemo(() => {

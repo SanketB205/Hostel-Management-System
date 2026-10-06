@@ -75,6 +75,14 @@ export const hostel = {
 
   deleteBlock: (blockId) =>
     request('DELETE', `/hostel/blocks/${blockId}`),
+
+  /**
+   * Admin: update the operational status of a room.
+   * @param {string} roomId - Room DB UUID
+   * @param {'Available'|'Maintenance'|'Reserved'} operationalStatus
+   */
+  updateRoomStatus: (roomId, operationalStatus) =>
+    request('PATCH', `/hostel/rooms/${roomId}/operational-status`, { operationalStatus }),
 };
 
 // ── Students ──────────────────────────────────────────────────────────────────
@@ -84,7 +92,7 @@ export const students = {
   getNextRegistrationNumber: () => request('GET', '/students/next-registration-number'),
   create: (studentData) => request('POST', '/students', studentData),
   update: (id, studentData) => request('PUT', `/students/${id}`, studentData),
-  updateStatus: (id, status) => request('PATCH', `/students/${id}/status`, { status }),
+  updateStatus: (id, status, date) => request('PATCH', `/students/${id}/status`, { status, date }),
   /** Admin resets a student's password back to their DOB (DDMMYYYY) */
   resetPassword: (id) => request('POST', `/students/${id}/reset-password`),
   attendanceAnalytics: (date, range) => {

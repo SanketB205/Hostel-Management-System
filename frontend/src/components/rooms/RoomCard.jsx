@@ -3,11 +3,12 @@ import { useNavigate } from 'react-router-dom';
 import {
   Box, Card, Typography, LinearProgress, Chip, IconButton,
   Modal, Backdrop, DialogTitle, DialogContent, DialogActions, Button,
-  Divider, Avatar, CircularProgress, Tooltip, Snackbar, Alert
+  Divider, Avatar, CircularProgress, Tooltip, Snackbar, Alert,
+  Select, FormControl, InputLabel, MenuItem,
 } from '@mui/material';
 import {
   Eye, Users, X,
-  GraduationCap, Hash, BookOpen, CalendarDays, Trash2
+  GraduationCap, Hash, BookOpen, CalendarDays, Trash2, ShieldAlert,
 } from 'lucide-react';
 import { useRoomContext } from '../../contexts/RoomContext';
 import { useAuth } from '../../contexts/AuthContext';
@@ -21,6 +22,13 @@ const STATUS_CONFIG = {
   Full:        { color: '#EF4444', bg: 'rgba(239,68,68,0.1)',   progress: '#EF4444' },
   Maintenance: { color: '#F97316', bg: 'rgba(249,115,22,0.1)',  progress: '#F97316' },
   Reserved:    { color: '#3B82F6', bg: 'rgba(59,130,246,0.1)',  progress: '#3B82F6' },
+};
+
+// Dot colors for the status dropdown options
+const OP_STATUS_DOT = {
+  Available:   '#22C55E',
+  Maintenance: '#F97316',
+  Reserved:    '#3B82F6',
 };
 
 const AVATAR_COLORS = [
@@ -87,6 +95,34 @@ function StudentCard({ student, index }) {
   );
 }
 
+// ── Shared modal styles ───────────────────────────────────────────────────────
+
+const MODAL_SX = {
+  position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+  zIndex: 1400, display: 'flex', alignItems: 'center', justifyContent: 'center',
+};
+
+const BACKDROP_SLOT_PROPS = {
+  backdrop: {
+    timeout: 500,
+    sx: {
+      position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+      width: '100vw', height: '100vh',
+      backgroundColor: 'rgba(0, 0, 0, 0.75)',
+      backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)',
+      zIndex: 1400,
+    },
+  },
+};
+
+const MODAL_COMMON = {
+  closeAfterTransition: true, disablePortal: false,
+  disableScrollLock: false, keepMounted: false,
+  container: () => document.body,
+  slots: { backdrop: Backdrop },
+  slotProps: BACKDROP_SLOT_PROPS,
+};
+
 // ── RoomCard ──────────────────────────────────────────────────────────────────
 
 export default function RoomCard({ room }) {
@@ -94,6 +130,7 @@ export default function RoomCard({ room }) {
   const { user } = useAuth();
   const isAdmin = user?.role === 'admin';
 
+  // ── Existing state ──────────────────────────────────────────────────────────
   const [dialogOpen, setDialogOpen] = useState(false);
   const [allocatedStudents, setAllocatedStudents] = useState([]);
   const [studentsLoading, setStudentsLoading] = useState(false);
@@ -101,21 +138,37 @@ export default function RoomCard({ room }) {
   const [deleteWarningOpen, setDeleteWarningOpen] = useState(false);
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
 
+  // ── Status management state ─────────────────────────────────────────────────
+  // Local copy of operationalStatus — updated immediately after a successful API call
+  const [localOpStatus, setLocalOpStatus] = useState(room.operationalStatus || 'Available');
+  const [statusSaving, setStatusSaving] = useState(false);
+  // The status the admin wants to apply (set when we need transfer confirmation first)
+  const [pendingStatus, setPendingStatus] = useState(null);
+  // Modal shown when trying to set Maintenance/Reserved on an occupied room
+  const [statusTransferOpen, setStatusTransferOpen] = useState(false);
+
   const { getStudentsForRoom, fetchBlocks } = useRoomContext();
+
+  // Sync localOpStatus if the room prop updates (e.g. after fetchBlocks)
+  useEffect(() => {
+    setLocalOpStatus(room.operationalStatus || 'Available');
+  }, [room.id, room.operationalStatus]);
 
   // Lock body scroll when any modal is open
   useEffect(() => {
-    if (dialogOpen || deleteConfirmOpen || deleteWarningOpen) {
+    if (dialogOpen || deleteConfirmOpen || deleteWarningOpen || statusTransferOpen) {
       document.body.style.overflow = 'hidden';
     } else {
       document.body.style.overflow = '';
     }
     return () => { document.body.style.overflow = ''; };
-  }, [dialogOpen, deleteConfirmOpen, deleteWarningOpen]);
+  }, [dialogOpen, deleteConfirmOpen, deleteWarningOpen, statusTransferOpen]);
 
   const config = STATUS_CONFIG[room.status] || STATUS_CONFIG.Available;
   const bedsOccupied = room.bedsOccupied || 0;
   const occupancyPct = room.capacity > 0 ? Math.min((bedsOccupied / room.capacity) * 100, 100) : 0;
+
+  // ── Existing handlers ───────────────────────────────────────────────────────
 
   const handleViewRoom = async () => {
     setDialogOpen(true);
@@ -143,15 +196,93 @@ export default function RoomCard({ room }) {
       await hostel.deleteRoom(room.id);
       setDeleteConfirmOpen(false);
       setDialogOpen(false);
-      if (fetchBlocks) {
-        await fetchBlocks(true);
-      }
+      if (fetchBlocks) await fetchBlocks(true);
       setSnackbar({ open: true, message: `Room ${room.number} deleted successfully.`, severity: 'success' });
     } catch (err) {
       console.error('Failed to delete room:', err);
       setSnackbar({ open: true, message: err.message || 'Failed to delete room.', severity: 'error' });
     }
   };
+
+  // ── Status management handlers ──────────────────────────────────────────────
+
+  /**
+   * Directly applies the operationalStatus via the API.
+   * Assumes any student-transfer preconditions have already been met.
+   */
+  const applyStatusChange = async (newStatus) => {
+    setStatusSaving(true);
+    try {
+      await hostel.updateRoomStatus(room.id, newStatus);
+      setLocalOpStatus(newStatus);
+      setSnackbar({
+        open: true,
+        message: `Room ${room.number} status set to ${newStatus}.`,
+        severity: 'success',
+      });
+      if (fetchBlocks) await fetchBlocks(true);
+    } catch (err) {
+      console.error('Failed to update room status:', err);
+      setSnackbar({
+        open: true,
+        message: err.message || 'Failed to update room status.',
+        severity: 'error',
+      });
+    } finally {
+      setStatusSaving(false);
+    }
+  };
+
+  /**
+   * Called when the admin picks a value from the status dropdown.
+   * If the room has students and the new status would block allocations,
+   * open the transfer-required modal instead of applying immediately.
+   */
+  const handleStatusChange = async (newStatus) => {
+    if (newStatus === localOpStatus) return;
+
+    if (
+      (newStatus === 'Maintenance' || newStatus === 'Reserved') &&
+      allocatedStudents.length > 0
+    ) {
+      setPendingStatus(newStatus);
+      setStatusTransferOpen(true);
+      return;
+    }
+
+    await applyStatusChange(newStatus);
+  };
+
+  /**
+   * Re-fetches the room's students and applies pendingStatus if the room is now empty.
+   * Used from the "Re-check & Apply" button in the transfer modal.
+   */
+  const handleRecheckAndApply = async () => {
+    const freshStudents = await getStudentsForRoom(room.id);
+    setAllocatedStudents(freshStudents);
+
+    if (freshStudents.length > 0) {
+      setSnackbar({
+        open: true,
+        message: `${freshStudents.length} student(s) are still allocated. Transfer all students first.`,
+        severity: 'warning',
+      });
+      return;
+    }
+
+    // Room is now empty — apply the pending status
+    setStatusTransferOpen(false);
+    const statusToApply = pendingStatus;
+    setPendingStatus(null);
+    await applyStatusChange(statusToApply);
+  };
+
+  const handleCloseStatusTransfer = () => {
+    setStatusTransferOpen(false);
+    setPendingStatus(null);
+  };
+
+  // ── Render ──────────────────────────────────────────────────────────────────
 
   return (
     <>
@@ -214,41 +345,8 @@ export default function RoomCard({ room }) {
       <Modal
         open={dialogOpen}
         onClose={handleCloseDialog}
-        closeAfterTransition
-        disablePortal={false}
-        disableScrollLock={false}
-        keepMounted={false}
-        container={() => document.body}
-        slots={{ backdrop: Backdrop }}
-        slotProps={{
-          backdrop: {
-            timeout: 500,
-            sx: {
-              position: 'fixed',
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              width: '100vw',
-              height: '100vh',
-              backgroundColor: 'rgba(0, 0, 0, 0.75)',
-              backdropFilter: 'blur(8px)',
-              WebkitBackdropFilter: 'blur(8px)',
-              zIndex: 1400,
-            },
-          },
-        }}
-        sx={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          zIndex: 1400,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}
+        {...MODAL_COMMON}
+        sx={MODAL_SX}
       >
         <Box
           sx={{
@@ -266,112 +364,286 @@ export default function RoomCard({ room }) {
             overflow: 'hidden',
           }}
         >
-        {/* Dialog header */}
-        <DialogTitle component="div" sx={{ p: 3, pb: 2 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+          {/* Dialog header */}
+          <DialogTitle component="div" sx={{ p: 3, pb: 2 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                <Box sx={{
+                  width: 44, height: 44, borderRadius: '10px',
+                  background: `linear-gradient(135deg, ${config.color}33 0%, ${config.color}11 100%)`,
+                  border: `2px solid ${config.color}`,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  color: config.color, fontWeight: 700, fontSize: '0.85rem',
+                }}>
+                  {room.number}
+                </Box>
+                <Box>
+                  <Typography variant="h6" sx={{ fontWeight: 700, lineHeight: 1.2 }}>Room {room.number}</Typography>
+                  <Typography variant="body2" sx={{ color: 'text.secondary' }}>{room.type} · {room.capacity} Beds</Typography>
+                </Box>
+              </Box>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                {/* Effective status chip */}
+                <Chip
+                  label={room.status}
+                  size="small"
+                  sx={{ backgroundColor: config.bg, color: config.color, fontWeight: 600, borderRadius: '6px' }}
+                />
+                <IconButton size="small" onClick={handleCloseDialog}><X size={18} /></IconButton>
+              </Box>
+            </Box>
+
+            {/* Occupancy bar */}
+            <Box sx={{ mt: 2 }}>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
+                <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                  Occupancy — {bedsOccupied} / {room.capacity} beds occupied
+                </Typography>
+                <Typography variant="caption" sx={{ fontWeight: 700, color: config.color }}>{Math.round(occupancyPct)}%</Typography>
+              </Box>
+              <LinearProgress variant="determinate" value={occupancyPct} sx={{
+                height: 6, borderRadius: 3,
+                backgroundColor: 'rgba(0,0,0,0.06)',
+                '& .MuiLinearProgress-bar': { backgroundColor: config.progress, borderRadius: 3 }
+              }} />
+            </Box>
+          </DialogTitle>
+
+          <Divider />
+
+          {/* Students list */}
+          <DialogContent sx={{ p: 3 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+              <GraduationCap size={18} color="#6366F1" />
+              <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>Allocated Students</Typography>
+              {!studentsLoading && (
+                <Chip
+                  label={allocatedStudents.length}
+                  size="small"
+                  sx={{ ml: 0.5, height: 20, backgroundColor: 'rgba(99,102,241,0.12)', color: '#6366F1', fontWeight: 700, fontSize: '0.75rem' }}
+                />
+              )}
+            </Box>
+
+            {studentsLoading ? (
+              <Box sx={{ display: 'flex', justifyContent: 'center', py: 5 }}>
+                <CircularProgress size={36} sx={{ color: '#6366F1' }} />
+              </Box>
+            ) : allocatedStudents.length === 0 ? (
               <Box sx={{
-                width: 44, height: 44, borderRadius: '10px',
-                background: `linear-gradient(135deg, ${config.color}33 0%, ${config.color}11 100%)`,
-                border: `2px solid ${config.color}`,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                color: config.color, fontWeight: 700, fontSize: '0.85rem',
+                py: 5, textAlign: 'center',
+                backgroundColor: 'rgba(0,0,0,0.02)', borderRadius: '12px',
+                border: '1px dashed', borderColor: 'divider'
               }}>
-                {room.number}
+                <Users size={36} color="#9CA3AF" style={{ marginBottom: 8 }} />
+                <Typography variant="body1" sx={{ color: 'text.secondary', fontWeight: 500 }}>
+                  No students allocated to this room
+                </Typography>
+                <Typography variant="caption" sx={{ color: 'text.disabled' }}>
+                  Use "Allocate Student" to assign students
+                </Typography>
               </Box>
-              <Box>
-                <Typography variant="h6" sx={{ fontWeight: 700, lineHeight: 1.2 }}>Room {room.number}</Typography>
-                <Typography variant="body2" sx={{ color: 'text.secondary' }}>{room.type} · {room.capacity} Beds</Typography>
+            ) : (
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+                {allocatedStudents.map((student, idx) => (
+                  <StudentCard key={student.id} student={student} index={idx} />
+                ))}
               </Box>
-            </Box>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              <Chip label={room.status} size="small" sx={{ backgroundColor: config.bg, color: config.color, fontWeight: 600, borderRadius: '6px' }} />
-              <IconButton size="small" onClick={handleCloseDialog}><X size={18} /></IconButton>
-            </Box>
-          </Box>
-
-          {/* Occupancy bar */}
-          <Box sx={{ mt: 2 }}>
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
-              <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-                Occupancy — {bedsOccupied} / {room.capacity} beds occupied
-              </Typography>
-              <Typography variant="caption" sx={{ fontWeight: 700, color: config.color }}>{Math.round(occupancyPct)}%</Typography>
-            </Box>
-            <LinearProgress variant="determinate" value={occupancyPct} sx={{
-              height: 6, borderRadius: 3,
-              backgroundColor: 'rgba(0,0,0,0.06)',
-              '& .MuiLinearProgress-bar': { backgroundColor: config.progress, borderRadius: 3 }
-            }} />
-          </Box>
-        </DialogTitle>
-
-        <Divider />
-
-        {/* Students list */}
-        <DialogContent sx={{ p: 3 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-            <GraduationCap size={18} color="#6366F1" />
-            <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>Allocated Students</Typography>
-            {!studentsLoading && (
-              <Chip
-                label={allocatedStudents.length}
-                size="small"
-                sx={{ ml: 0.5, height: 20, backgroundColor: 'rgba(99,102,241,0.12)', color: '#6366F1', fontWeight: 700, fontSize: '0.75rem' }}
-              />
             )}
-          </Box>
+          </DialogContent>
 
-          {studentsLoading ? (
-            <Box sx={{ display: 'flex', justifyContent: 'center', py: 5 }}>
-              <CircularProgress size={36} sx={{ color: '#6366F1' }} />
-            </Box>
-          ) : allocatedStudents.length === 0 ? (
-            <Box sx={{
-              py: 5, textAlign: 'center',
-              backgroundColor: 'rgba(0,0,0,0.02)', borderRadius: '12px',
-              border: '1px dashed', borderColor: 'divider'
-            }}>
-              <Users size={36} color="#9CA3AF" style={{ marginBottom: 8 }} />
-              <Typography variant="body1" sx={{ color: 'text.secondary', fontWeight: 500 }}>
-                No students allocated to this room
-              </Typography>
-              <Typography variant="caption" sx={{ color: 'text.disabled' }}>
-                Use "Allocate Student" to assign students
-              </Typography>
-            </Box>
-          ) : (
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
-              {allocatedStudents.map((student, idx) => (
-                <StudentCard key={student.id} student={student} index={idx} />
-              ))}
-            </Box>
-          )}
-        </DialogContent>
-        {isAdmin && (
-          <>
-            <Divider />
-            <DialogActions sx={{ px: 3, pb: 3, pt: 2, justifyContent: 'flex-end' }}>
-              <Button
-                variant="contained"
-                color="error"
-                startIcon={<Trash2 size={18} />}
-                onClick={handleDeleteClick}
+          {/* Admin actions footer */}
+          {isAdmin && (
+            <>
+              <Divider />
+              <DialogActions
                 sx={{
-                  backgroundColor: '#DC2626',
-                  '&:hover': { backgroundColor: '#B91C1C' },
-                  borderRadius: '8px',
-                  textTransform: 'none',
-                  fontWeight: 600,
-                  px: 3,
-                  py: 1
+                  px: 3, pb: 3, pt: 2,
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  flexWrap: 'wrap',
+                  gap: 2,
                 }}
               >
-                Delete Room
-              </Button>
-            </DialogActions>
-          </>
-        )}
+                {/* ── Room Status Control (left) ── */}
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
+                  <Typography variant="body2" sx={{ fontWeight: 600, color: 'text.secondary', whiteSpace: 'nowrap' }}>
+                    Room Status:
+                  </Typography>
+                  <FormControl size="small" sx={{ minWidth: 160 }}>
+                    <Select
+                      value={localOpStatus}
+                      onChange={(e) => handleStatusChange(e.target.value)}
+                      disabled={statusSaving || studentsLoading}
+                      displayEmpty
+                      MenuProps={{
+                        container: document.body,
+                        PaperProps: { sx: { maxHeight: 240, zIndex: 2000 } },
+                        sx: { zIndex: 2000 },
+                      }}
+                      sx={{ borderRadius: '8px' }}
+                    >
+                      {['Available', 'Maintenance', 'Reserved'].map((s) => (
+                        <MenuItem key={s} value={s}>
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <Box
+                              sx={{
+                                width: 8, height: 8, borderRadius: '50%',
+                                backgroundColor: OP_STATUS_DOT[s],
+                                flexShrink: 0,
+                              }}
+                            />
+                            {s}
+                          </Box>
+                        </MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                  {statusSaving && <CircularProgress size={16} sx={{ color: '#6366F1' }} />}
+                </Box>
+
+                {/* ── Delete Room (right) ── */}
+                <Button
+                  variant="contained"
+                  color="error"
+                  startIcon={<Trash2 size={18} />}
+                  onClick={handleDeleteClick}
+                  sx={{
+                    backgroundColor: '#DC2626',
+                    '&:hover': { backgroundColor: '#B91C1C' },
+                    borderRadius: '8px',
+                    textTransform: 'none',
+                    fontWeight: 600,
+                    px: 3, py: 1,
+                  }}
+                >
+                  Delete Room
+                </Button>
+              </DialogActions>
+            </>
+          )}
+        </Box>
+      </Modal>
+
+      {/* ── Status Change: Transfer Required Modal ── */}
+      <Modal
+        open={statusTransferOpen}
+        onClose={handleCloseStatusTransfer}
+        {...MODAL_COMMON}
+        sx={MODAL_SX}
+      >
+        <Box
+          sx={{
+            position: 'relative',
+            width: { xs: '90%', sm: '600px' },
+            maxWidth: '95vw',
+            maxHeight: '85vh',
+            display: 'flex',
+            flexDirection: 'column',
+            backgroundColor: 'background.paper',
+            borderRadius: '16px',
+            boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)',
+            outline: 'none',
+            zIndex: 1401,
+            overflow: 'hidden',
+          }}
+        >
+          {/* Header */}
+          <DialogTitle component="div" sx={{ p: 3, pb: 2, display: 'flex', alignItems: 'center', gap: 1.5 }}>
+            <Box sx={{
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              width: 40, height: 40, borderRadius: '50%',
+              backgroundColor: 'rgba(249,115,22,0.1)', color: '#F97316',
+              flexShrink: 0,
+            }}>
+              <ShieldAlert size={20} />
+            </Box>
+            <Box sx={{ flex: 1 }}>
+              <Typography variant="h6" sx={{ fontWeight: 700, lineHeight: 1.2 }}>
+                Transfer Required
+              </Typography>
+              <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+                Set Room {room.number} → <strong style={{ color: pendingStatus === 'Maintenance' ? '#F97316' : '#3B82F6' }}>{pendingStatus}</strong>
+              </Typography>
+            </Box>
+            <IconButton size="small" onClick={handleCloseStatusTransfer}><X size={18} /></IconButton>
+          </DialogTitle>
+
+          <DialogContent sx={{ px: 3, pb: 3, overflowY: 'auto' }}>
+            <Alert severity="warning" sx={{ mb: 3, borderRadius: '10px' }}>
+              Room <strong>{room.number}</strong> cannot be set to <strong>{pendingStatus}</strong> while students are allocated.
+              Transfer all students to another room first, then click <strong>Re-check &amp; Apply</strong>.
+            </Alert>
+
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              {allocatedStudents.map((student) => (
+                <Box
+                  key={student.id}
+                  sx={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    p: 2, border: '1px solid', borderColor: 'divider', borderRadius: '12px',
+                    backgroundColor: 'rgba(0,0,0,0.01)',
+                  }}
+                >
+                  <Box>
+                    <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>{student.name}</Typography>
+                    <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mb: 0.5 }}>
+                      Reg No: {student.regNo}
+                    </Typography>
+                    <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                      Current Room: {room.number} · Bed {student.bedNumber}
+                    </Typography>
+                  </Box>
+                  <Button
+                    variant="contained"
+                    size="small"
+                    onClick={() => {
+                      handleCloseStatusTransfer();
+                      setDialogOpen(false);
+                      navigate(`/students/edit/${student.id}?focus=hostel`);
+                    }}
+                    sx={{
+                      backgroundColor: '#4F46E5',
+                      '&:hover': { backgroundColor: '#4338CA' },
+                      textTransform: 'none',
+                      fontWeight: 600,
+                      borderRadius: '6px',
+                      px: 2,
+                      flexShrink: 0,
+                    }}
+                  >
+                    Transfer
+                  </Button>
+                </Box>
+              ))}
+            </Box>
+          </DialogContent>
+
+          <Divider />
+          <DialogActions sx={{ p: 2.5, gap: 1.5, justifyContent: 'flex-end' }}>
+            <Button
+              variant="text"
+              onClick={handleCloseStatusTransfer}
+              sx={{ color: 'text.secondary', textTransform: 'none', fontWeight: 600 }}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="contained"
+              onClick={handleRecheckAndApply}
+              sx={{
+                backgroundColor: pendingStatus === 'Maintenance' ? '#F97316' : '#3B82F6',
+                '&:hover': { backgroundColor: pendingStatus === 'Maintenance' ? '#EA6C0A' : '#2563EB' },
+                textTransform: 'none',
+                fontWeight: 600,
+                borderRadius: '8px',
+                px: 3,
+              }}
+            >
+              Re-check &amp; Apply {pendingStatus}
+            </Button>
+          </DialogActions>
         </Box>
       </Modal>
 
@@ -379,41 +651,8 @@ export default function RoomCard({ room }) {
       <Modal
         open={deleteWarningOpen}
         onClose={() => setDeleteWarningOpen(false)}
-        closeAfterTransition
-        disablePortal={false}
-        disableScrollLock={false}
-        keepMounted={false}
-        container={() => document.body}
-        slots={{ backdrop: Backdrop }}
-        slotProps={{
-          backdrop: {
-            timeout: 500,
-            sx: {
-              position: 'fixed',
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              width: '100vw',
-              height: '100vh',
-              backgroundColor: 'rgba(0, 0, 0, 0.75)',
-              backdropFilter: 'blur(8px)',
-              WebkitBackdropFilter: 'blur(8px)',
-              zIndex: 1400,
-            },
-          },
-        }}
-        sx={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          zIndex: 1400,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}
+        {...MODAL_COMMON}
+        sx={MODAL_SX}
       >
         <Box
           sx={{
@@ -431,68 +670,66 @@ export default function RoomCard({ room }) {
             overflow: 'hidden',
           }}
         >
-        <DialogTitle component="div" sx={{ p: 3, pb: 2, display: 'flex', alignItems: 'center', gap: 1.5 }}>
-          <Box sx={{
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            width: 40, height: 40, borderRadius: '50%',
-            backgroundColor: 'rgba(239, 68, 68, 0.1)', color: '#EF4444'
-          }}>
-            <Trash2 size={20} />
-          </Box>
-          <Typography variant="h6" sx={{ fontWeight: 700 }}>Cannot Delete Room</Typography>
-        </DialogTitle>
+          <DialogTitle component="div" sx={{ p: 3, pb: 2, display: 'flex', alignItems: 'center', gap: 1.5 }}>
+            <Box sx={{
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              width: 40, height: 40, borderRadius: '50%',
+              backgroundColor: 'rgba(239, 68, 68, 0.1)', color: '#EF4444'
+            }}>
+              <Trash2 size={20} />
+            </Box>
+            <Typography variant="h6" sx={{ fontWeight: 700 }}>Cannot Delete Room</Typography>
+          </DialogTitle>
 
-        <DialogContent sx={{ px: 3, pb: 3 }}>
-          <Typography variant="body2" sx={{ color: 'text.secondary', mb: 3 }}>
-            This room currently has students allocated. Transfer all students before deleting this room.
-          </Typography>
+          <DialogContent sx={{ px: 3, pb: 3 }}>
+            <Typography variant="body2" sx={{ color: 'text.secondary', mb: 3 }}>
+              This room currently has students allocated. Transfer all students before deleting this room.
+            </Typography>
 
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-            {allocatedStudents.map(student => (
-              <Box key={student.id} sx={{
-                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                p: 2, border: '1px solid', borderColor: 'divider', borderRadius: '12px',
-                backgroundColor: 'rgba(0,0,0,0.01)'
-              }}>
-                <Box>
-                  <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>{student.name}</Typography>
-                  <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mb: 0.5 }}>
-                    Reg No: {student.regNo}
-                  </Typography>
-                  <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-                    Current Room: {room.number}
-                  </Typography>
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              {allocatedStudents.map(student => (
+                <Box key={student.id} sx={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  p: 2, border: '1px solid', borderColor: 'divider', borderRadius: '12px',
+                  backgroundColor: 'rgba(0,0,0,0.01)'
+                }}>
+                  <Box>
+                    <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>{student.name}</Typography>
+                    <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mb: 0.5 }}>
+                      Reg No: {student.regNo}
+                    </Typography>
+                    <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                      Current Room: {room.number}
+                    </Typography>
+                  </Box>
+                  <Button
+                    variant="contained"
+                    size="small"
+                    onClick={() => {
+                      setDeleteWarningOpen(false);
+                      setDialogOpen(false);
+                      navigate(`/students/edit/${student.id}?focus=hostel`);
+                    }}
+                    sx={{
+                      backgroundColor: '#4F46E5',
+                      '&:hover': { backgroundColor: '#4338CA' },
+                      textTransform: 'none', fontWeight: 600,
+                      borderRadius: '6px', px: 2
+                    }}
+                  >
+                    Transfer
+                  </Button>
                 </Box>
-                <Button
-                  variant="contained"
-                  size="small"
-                  onClick={() => {
-                    setDeleteWarningOpen(false);
-                    setDialogOpen(false);
-                    navigate(`/students/edit/${student.id}?focus=hostel`);
-                  }}
-                  sx={{
-                    backgroundColor: '#4F46E5',
-                    '&:hover': { backgroundColor: '#4338CA' },
-                    textTransform: 'none',
-                    fontWeight: 600,
-                    borderRadius: '6px',
-                    px: 2
-                  }}
-                >
-                  Transfer
-                </Button>
-              </Box>
-            ))}
-          </Box>
-        </DialogContent>
+              ))}
+            </Box>
+          </DialogContent>
 
-        <Divider />
-        <DialogActions sx={{ p: 2 }}>
-          <Button onClick={() => setDeleteWarningOpen(false)} sx={{ color: 'text.secondary', textTransform: 'none', fontWeight: 600 }}>
-            Close
-          </Button>
-        </DialogActions>
+          <Divider />
+          <DialogActions sx={{ p: 2 }}>
+            <Button onClick={() => setDeleteWarningOpen(false)} sx={{ color: 'text.secondary', textTransform: 'none', fontWeight: 600 }}>
+              Close
+            </Button>
+          </DialogActions>
         </Box>
       </Modal>
 
@@ -500,41 +737,8 @@ export default function RoomCard({ room }) {
       <Modal
         open={deleteConfirmOpen}
         onClose={() => setDeleteConfirmOpen(false)}
-        closeAfterTransition
-        disablePortal={false}
-        disableScrollLock={false}
-        keepMounted={false}
-        container={() => document.body}
-        slots={{ backdrop: Backdrop }}
-        slotProps={{
-          backdrop: {
-            timeout: 500,
-            sx: {
-              position: 'fixed',
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              width: '100vw',
-              height: '100vh',
-              backgroundColor: 'rgba(0, 0, 0, 0.75)',
-              backdropFilter: 'blur(8px)',
-              WebkitBackdropFilter: 'blur(8px)',
-              zIndex: 1400,
-            },
-          },
-        }}
-        sx={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          zIndex: 1400,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}
+        {...MODAL_COMMON}
+        sx={MODAL_SX}
       >
         <Box
           sx={{
@@ -548,40 +752,38 @@ export default function RoomCard({ room }) {
             zIndex: 1401,
           }}
         >
-        <DialogTitle component="div" sx={{ p: 3, pb: 2 }}>
-          <Typography variant="h6" sx={{ fontWeight: 700 }}>Delete Room</Typography>
-        </DialogTitle>
+          <DialogTitle component="div" sx={{ p: 3, pb: 2 }}>
+            <Typography variant="h6" sx={{ fontWeight: 700 }}>Delete Room</Typography>
+          </DialogTitle>
 
-        <DialogContent sx={{ px: 3, pb: 3 }}>
-          <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-            Are you sure you want to delete Room <strong>{room.number}</strong>? This action cannot be undone.
-          </Typography>
-        </DialogContent>
+          <DialogContent sx={{ px: 3, pb: 3 }}>
+            <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+              Are you sure you want to delete Room <strong>{room.number}</strong>? This action cannot be undone.
+            </Typography>
+          </DialogContent>
 
-        <Divider />
-        <DialogActions sx={{ p: 2, display: 'flex', gap: 1.5, justifyContent: 'flex-end' }}>
-          <Button
-            variant="text"
-            onClick={() => setDeleteConfirmOpen(false)}
-            sx={{ color: 'text.secondary', textTransform: 'none', fontWeight: 600 }}
-          >
-            Cancel
-          </Button>
-          <Button
-            variant="contained"
-            color="error"
-            onClick={handleDeleteRoom}
-            sx={{
-              backgroundColor: '#DC2626',
-              '&:hover': { backgroundColor: '#B91C1C' },
-              borderRadius: '8px',
-              textTransform: 'none',
-              fontWeight: 600,
-            }}
-          >
-            Delete
-          </Button>
-        </DialogActions>
+          <Divider />
+          <DialogActions sx={{ p: 2, display: 'flex', gap: 1.5, justifyContent: 'flex-end' }}>
+            <Button
+              variant="text"
+              onClick={() => setDeleteConfirmOpen(false)}
+              sx={{ color: 'text.secondary', textTransform: 'none', fontWeight: 600 }}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="contained"
+              color="error"
+              onClick={handleDeleteRoom}
+              sx={{
+                backgroundColor: '#DC2626',
+                '&:hover': { backgroundColor: '#B91C1C' },
+                borderRadius: '8px', textTransform: 'none', fontWeight: 600,
+              }}
+            >
+              Delete
+            </Button>
+          </DialogActions>
         </Box>
       </Modal>
 

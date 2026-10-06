@@ -125,7 +125,6 @@ const schema = yup.object().shape({
   roomNumber: yup.string().nullable(),
   bedNumber: yup.string().nullable(),
   allocationDate: yup.date().nullable(),
-  status: yup.string().required('Status is required'),
   totalBillable: yup.number().typeError('Must be a number').nullable(),
 });
 
@@ -179,7 +178,7 @@ export default function EditStudentPage() {
       firstName: '', lastName: '', regNo: '', gender: '', dob: null, email: '', phone: '', address: '',
       departmentId: '', courseId: '', yearOfStudy: '', admissionDate: null,
       parentName: '', relationship: '', parentPhone: '', parentEmail: '',
-      hostelBlock: '', floorNumber: '', roomNumber: '', bedNumber: '', allocationDate: null, status: 'Present',
+      hostelBlock: '', floorNumber: '', roomNumber: '', bedNumber: '', allocationDate: null,
       totalFees: '', initialDeposit: '', paymentStatus: 'Pending'
     }
   });
@@ -297,7 +296,6 @@ export default function EditStudentPage() {
             roomNumber: activeAlloc?.room?.number || '',
             bedNumber: activeAlloc?.bedNumber || '',
             allocationDate: activeAlloc?.allocatedAt ? dayjs(activeAlloc.allocatedAt) : null,
-            status: ['Present', 'Absent', 'Outing', 'Leave', 'Late'].includes(s.status) ? s.status : 'Present',
             totalBillable: s.totalBillable !== null && s.totalBillable !== undefined ? s.totalBillable : (s.totalFees || '')
           });
         }
@@ -338,12 +336,15 @@ export default function EditStudentPage() {
   const currentRoomNumber = currentAlloc?.room?.number;
   const currentBedNumber = currentAlloc?.bedNumber;
 
+  const isRoomMaintenance = (room) =>
+    room.status === 'Maintenance' || room.operationalStatus === 'Maintenance';
+
   const availableBlocks = useMemo(() => {
     return mockBlocks.filter(block =>
       (currentAlloc?.room?.floor?.block?.name && block.name === currentAlloc.room.floor.block.name) ||
       (block.floors || []).some(floor =>
         (floor.rooms || []).some(room =>
-          (room.bedsOccupied || 0) < room.capacity && room.status !== 'Maintenance'
+          (room.bedsOccupied || 0) < room.capacity && !isRoomMaintenance(room)
         )
       )
     );
@@ -358,7 +359,7 @@ export default function EditStudentPage() {
     return (selectedBlockObj.floors || []).filter(floor =>
       (currentAlloc?.room?.floor?.name && floor.name === currentAlloc.room.floor.name) ||
       (floor.rooms || []).some(room =>
-        (room.bedsOccupied || 0) < room.capacity && room.status !== 'Maintenance'
+        (room.bedsOccupied || 0) < room.capacity && !isRoomMaintenance(room)
       )
     );
   }, [selectedBlockObj, currentAlloc]);
@@ -369,10 +370,10 @@ export default function EditStudentPage() {
 
   const availableRooms = useMemo(() => {
     if (!selectedFloorObj) return [];
-    return (selectedFloorObj.rooms || []).filter(room =>
-      room.number === currentRoomNumber ||
-      ((room.bedsOccupied || 0) < room.capacity && room.status !== 'Maintenance')
-    );
+    return (selectedFloorObj.rooms || []).filter(room => {
+      if (isRoomMaintenance(room)) return false;
+      return room.number === currentRoomNumber || (room.bedsOccupied || 0) < room.capacity;
+    });
   }, [selectedFloorObj, currentRoomNumber]);
 
   const selectedRoomObj = useMemo(() => {
@@ -500,7 +501,6 @@ export default function EditStudentPage() {
         guardianRelationship: data.relationship,
         guardianPhone:        data.parentPhone,
         guardianEmail:        data.parentEmail || null,
-        status:               data.status,
         totalBillable:        data.totalBillable !== '' && data.totalBillable !== null && data.totalBillable !== undefined ? Number(data.totalBillable) : null,
       };
 
@@ -907,11 +907,15 @@ export default function EditStudentPage() {
                         setValue('bedNumber', '');
                       }}
                     >
-                      {availableRooms.map(room => (
-                        <MenuItem key={room.number} value={room.number}>
-                          {room.number} ({room.capacity - (room.bedsOccupied || 0)} beds left)
-                        </MenuItem>
-                      ))}
+                      {availableRooms.map(room => {
+                        const bedsLeft = room.capacity - (room.bedsOccupied || 0);
+                        const isReserved = room.operationalStatus === 'Reserved' || room.status === 'Reserved';
+                        return (
+                          <MenuItem key={room.number} value={room.number}>
+                            {room.number} ({bedsLeft} {bedsLeft === 1 ? 'bed' : 'beds'} left){isReserved ? ' (Reserved room)' : ''}
+                          </MenuItem>
+                        );
+                      })}
                     </TextField>
                   )} />
                   <Controller name="bedNumber" control={control} render={({ field }) => (
@@ -925,15 +929,6 @@ export default function EditStudentPage() {
                     <DatePicker label="Allocation Date" value={field.value} onChange={(newValue) => field.onChange(newValue)}
                       disabled={!transferModeEnabled}
                       slotProps={{ textField: { fullWidth: true, error: !!errors.allocationDate, helperText: errors.allocationDate?.message, disabled: !transferModeEnabled } }} />
-                  )} />
-                  <Controller name="status" control={control} render={({ field }) => (
-                    <TextField {...field} select fullWidth label="Student Status *" error={!!errors.status} helperText={errors.status?.message}>
-                      <MenuItem value="Present">Present</MenuItem>
-                      <MenuItem value="Outing">Outing</MenuItem>
-                      <MenuItem value="Leave">Leave</MenuItem>
-                      <MenuItem value="Late">Late</MenuItem>
-                      <MenuItem value="Absent">Absent</MenuItem>
-                    </TextField>
                   )} />
                 </GridBox>
               </CardContent>

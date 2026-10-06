@@ -16,6 +16,14 @@ const dobPassword = (dateOfBirth) => {
   return `${day}${month}${year}`;
 };
 
+/** Get local calendar date as YYYY-MM-DD (avoids UTC offset shifts) */
+export const getLocalDateString = (d = new Date()) => {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
 // ── List all students ─────────────────────────────────────────────────────────
 
 export const listStudents = asyncHandler(async (req, res) => {
@@ -41,7 +49,7 @@ export const listStudents = asyncHandler(async (req, res) => {
   });
 
   // Use req.query.date if provided, otherwise default to today
-  const targetDate = req.query.date || new Date().toISOString().slice(0, 10);
+  const targetDate = req.query.date || getLocalDateString();
   const attendances = await StudentAttendance.findAll({
     where: { attendanceDate: targetDate },
   });
@@ -94,14 +102,14 @@ export const getStudent = asyncHandler(async (req, res) => {
   });
   if (!student) return res.status(404).json({ message: 'Student not found.' });
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = req.query.date || getLocalDateString();
   const attendance = await StudentAttendance.findOne({
     where: { studentId: student.id, attendanceDate: today },
   });
 
   const studentJson = student.toJSON();
   studentJson.attendanceStatus = attendance ? attendance.status : 'Not Marked';
-  studentJson.status = attendance ? attendance.status : (student.status || 'Present');
+  studentJson.status = attendance ? attendance.status : (student.status || 'Not Marked');
 
   res.json({ data: studentJson });
 });
@@ -266,6 +274,7 @@ export const createStudent = asyncHandler(async (req, res) => {
     const student = await Student.create({
       ...req.body,
       ...academicFields,
+      status: 'Not Marked',
       registrationNumber,
       userId: user.id,
     }, { transaction });
@@ -301,7 +310,8 @@ export const createStudent = asyncHandler(async (req, res) => {
     const roomNumber = String(allocationData.roomNumber || '').trim().toUpperCase();
     const room = await Room.findOne({ where: { number: roomNumber }, transaction, lock: transaction.LOCK.UPDATE });
     if (!room) throw Object.assign(new Error('Selected room was not found in the database.'), { status: 404 });
-    if (room.status === 'Maintenance') throw Object.assign(new Error('Maintenance rooms cannot receive allocations.'), { status: 409 });
+    const isMaintenance = room.status === 'Maintenance' || room.operationalStatus === 'Maintenance';
+    if (isMaintenance) throw Object.assign(new Error('Maintenance rooms cannot receive allocations.'), { status: 409 });
 
     const occupiedBeds = await BedAllocation.count({ where: { roomId: room.id, status: 'active' }, transaction });
     if (occupiedBeds >= room.capacity) throw Object.assign(new Error('Selected room is already full.'), { status: 409 });
@@ -338,7 +348,7 @@ export const createStudent = asyncHandler(async (req, res) => {
 // ── Update student status (rector attendance) ─────────────────────────────────
 
 export const updateStudentStatus = asyncHandler(async (req, res) => {
-  const { status } = req.body;
+  const { status, date } = req.body;
   const validStatuses = ['Present', 'Absent', 'Outing', 'Leave', 'Late', 'Not Marked'];
   if (!status || !validStatuses.includes(status)) {
     return res.status(400).json({ message: `Status must be one of: ${validStatuses.join(', ')}.` });
@@ -347,16 +357,16 @@ export const updateStudentStatus = asyncHandler(async (req, res) => {
   const student = await Student.findByPk(req.params.id);
   if (!student) return res.status(404).json({ message: 'Student not found.' });
 
-  const today = new Date().toISOString().slice(0, 10);
+  const targetDate = date || getLocalDateString();
 
   const [attendance, created] = await StudentAttendance.findOrCreate({
     where: {
       studentId: student.id,
-      attendanceDate: today,
+      attendanceDate: targetDate,
     },
     defaults: {
       studentId: student.id,
-      attendanceDate: today,
+      attendanceDate: targetDate,
       status,
     },
   });
@@ -365,11 +375,9 @@ export const updateStudentStatus = asyncHandler(async (req, res) => {
     await attendance.update({ status });
   }
 
-  if (status !== 'Not Marked') {
-    await student.update({ status });
-  }
+  await student.update({ status });
 
-  res.json({ data: { id: student.id, status } });
+  res.json({ data: { id: student.id, status, date: targetDate } });
 });
 
 export const resetStudentPassword = asyncHandler(async (req, res) => {
@@ -389,16 +397,18 @@ export const resetStudentPassword = asyncHandler(async (req, res) => {
 });
 
 export const getAttendanceAnalytics = asyncHandler(async (req, res) => {
-  const targetDate = req.query.date || new Date().toISOString().slice(0, 10);
+  const targetDate = req.query.date || getLocalDateString();
   const range = req.query.range || 'Today';
 
   const getPastDates = (endDateStr, daysCount) => {
     const dates = [];
-    const endDate = new Date(endDateStr);
+    const [y, m, d] = endDateStr.split('-').map(Number);
     for (let i = daysCount - 1; i >= 0; i--) {
-      const d = new Date(endDate);
-      d.setDate(endDate.getDate() - i);
-      dates.push(d.toISOString().slice(0, 10));
+      const dt = new Date(y, m - 1, d - i);
+      const year = dt.getFullYear();
+      const month = String(dt.getMonth() + 1).padStart(2, '0');
+      const day = String(dt.getDate()).padStart(2, '0');
+      dates.push(`${year}-${month}-${day}`);
     }
     return dates;
   };
@@ -454,9 +464,9 @@ export const getAttendanceAnalytics = asyncHandler(async (req, res) => {
 
   // 3. Stats aggregated for datesInRange
   let present = 0, absent = 0, leave = 0, outing = 0, late = 0, pending = 0;
-  students.forEach(s => {
-    datesInRange.forEach(date => {
-      const status = attendanceKeyMap[`${s.id}_${date}`] || 'Not Marked';
+  if (range === 'Today') {
+    students.forEach(s => {
+      const status = attendanceKeyMap[`${s.id}_${targetDate}`] || 'Not Marked';
       if (status === 'Present') present++;
       else if (status === 'Absent') absent++;
       else if (status === 'Leave') leave++;
@@ -464,10 +474,24 @@ export const getAttendanceAnalytics = asyncHandler(async (req, res) => {
       else if (status === 'Late') late++;
       else pending++;
     });
-  });
+  } else {
+    // For 7D and 30D: aggregate actual attendance records in the selected range
+    targetAttendances.forEach(a => {
+      if (a.status === 'Present') present++;
+      else if (a.status === 'Absent') absent++;
+      else if (a.status === 'Leave') leave++;
+      else if (a.status === 'Outing') outing++;
+      else if (a.status === 'Late') late++;
+    });
+    // Pending indicates students not marked on targetDate
+    students.forEach(s => {
+      const status = attendanceKeyMap[`${s.id}_${targetDate}`] || 'Not Marked';
+      if (status === 'Not Marked') pending++;
+    });
+  }
 
   const total = students.length;
-  const totalSlots = total * datesInRange.length;
+  const totalSlots = range === 'Today' ? total : (present + absent + leave + outing + late);
   const rate = totalSlots > 0 ? Math.round(((present + late + outing) / totalSlots) * 100) : 0;
 
   // 4. Course-wise Attendance
@@ -478,21 +502,27 @@ export const getAttendanceAnalytics = asyncHandler(async (req, res) => {
       courseMap[course] = { total: 0, present: 0, absent: 0 };
     }
     datesInRange.forEach(date => {
-      courseMap[course].total++;
-      const status = attendanceKeyMap[`${s.id}_${date}`] || 'Not Marked';
-      if (['Present', 'Late', 'Outing'].includes(status)) {
-        courseMap[course].present++;
-      } else if (status === 'Absent') {
-        courseMap[course].absent++;
+      const status = attendanceKeyMap[`${s.id}_${date}`];
+      if (status && status !== 'Not Marked') {
+        courseMap[course].total++;
+        if (['Present', 'Late', 'Outing'].includes(status)) {
+          courseMap[course].present++;
+        } else if (status === 'Absent') {
+          courseMap[course].absent++;
+        }
+      } else if (range === 'Today') {
+        courseMap[course].total++;
       }
     });
   });
-  const courseAttendance = Object.entries(courseMap).map(([course, counts]) => ({
-    course,
-    present: counts.present,
-    absent: counts.absent,
-    rate: counts.total > 0 ? Math.round((counts.present / counts.total) * 100) : 0
-  }));
+  const courseAttendance = Object.entries(courseMap)
+    .filter(([_, counts]) => counts.total > 0)
+    .map(([course, counts]) => ({
+      course,
+      present: counts.present,
+      absent: counts.absent,
+      rate: counts.total > 0 ? Math.round((counts.present / counts.total) * 100) : 0
+    }));
 
   // 5. Year-wise Attendance
   const yearMap = {};
@@ -502,21 +532,27 @@ export const getAttendanceAnalytics = asyncHandler(async (req, res) => {
       yearMap[year] = { total: 0, present: 0, absent: 0 };
     }
     datesInRange.forEach(date => {
-      yearMap[year].total++;
-      const status = attendanceKeyMap[`${s.id}_${date}`] || 'Not Marked';
-      if (['Present', 'Late', 'Outing'].includes(status)) {
-        yearMap[year].present++;
-      } else if (status === 'Absent') {
-        yearMap[year].absent++;
+      const status = attendanceKeyMap[`${s.id}_${date}`];
+      if (status && status !== 'Not Marked') {
+        yearMap[year].total++;
+        if (['Present', 'Late', 'Outing'].includes(status)) {
+          yearMap[year].present++;
+        } else if (status === 'Absent') {
+          yearMap[year].absent++;
+        }
+      } else if (range === 'Today') {
+        yearMap[year].total++;
       }
     });
   });
-  const yearAttendance = Object.entries(yearMap).map(([year, counts]) => ({
-    year,
-    present: counts.present,
-    absent: counts.absent,
-    rate: counts.total > 0 ? Math.round((counts.present / counts.total) * 100) : 0
-  }));
+  const yearAttendance = Object.entries(yearMap)
+    .filter(([_, counts]) => counts.total > 0)
+    .map(([year, counts]) => ({
+      year,
+      present: counts.present,
+      absent: counts.absent,
+      rate: counts.total > 0 ? Math.round((counts.present / counts.total) * 100) : 0
+    }));
 
   // 6. Block-wise Attendance
   const blockMap = {};
@@ -526,21 +562,27 @@ export const getAttendanceAnalytics = asyncHandler(async (req, res) => {
       blockMap[block] = { total: 0, present: 0, absent: 0 };
     }
     datesInRange.forEach(date => {
-      blockMap[block].total++;
-      const status = attendanceKeyMap[`${s.id}_${date}`] || 'Not Marked';
-      if (['Present', 'Late', 'Outing'].includes(status)) {
-        blockMap[block].present++;
-      } else if (status === 'Absent') {
-        blockMap[block].absent++;
+      const status = attendanceKeyMap[`${s.id}_${date}`];
+      if (status && status !== 'Not Marked') {
+        blockMap[block].total++;
+        if (['Present', 'Late', 'Outing'].includes(status)) {
+          blockMap[block].present++;
+        } else if (status === 'Absent') {
+          blockMap[block].absent++;
+        }
+      } else if (range === 'Today') {
+        blockMap[block].total++;
       }
     });
   });
-  const blockAttendance = Object.entries(blockMap).map(([block, counts]) => ({
-    block,
-    present: counts.present,
-    absent: counts.absent,
-    rate: counts.total > 0 ? Math.round((counts.present / counts.total) * 100) : 0
-  }));
+  const blockAttendance = Object.entries(blockMap)
+    .filter(([_, counts]) => counts.total > 0)
+    .map(([block, counts]) => ({
+      block,
+      present: counts.present,
+      absent: counts.absent,
+      rate: counts.total > 0 ? Math.round((counts.present / counts.total) * 100) : 0
+    }));
 
   // 7. Last 7 Days dates
   const past7Days = getPastDates(targetDate, 7);
@@ -571,7 +613,8 @@ export const getAttendanceAnalytics = asyncHandler(async (req, res) => {
   const weeklyTrend7D = past7Days.map(date => {
     const dayData = dailyStatsMap[date];
     const totalDay = dayData.total;
-    const dateObj = new Date(date);
+    const [y, m, d] = date.split('-').map(Number);
+    const dateObj = new Date(y, m - 1, d);
     const dayName = dateObj.toLocaleDateString('en-US', { weekday: 'short' });
     
     return {
@@ -853,25 +896,10 @@ export const updateStudent = asyncHandler(async (req, res) => {
       }
     }
 
-    // 2. Update student details
+    // 2. Update student details (attendance status is managed exclusively by Rector)
     const studentUpdateData = { ...req.body, ...academicFields };
-    if (studentUpdateData.status === 'Not Marked') {
-      delete studentUpdateData.status;
-    }
+    delete studentUpdateData.status;
     await student.update(studentUpdateData, { transaction });
-
-    // Sync today's attendance if a status was explicitly passed
-    if (req.body.status && ['Present', 'Absent', 'Outing', 'Leave', 'Late'].includes(req.body.status)) {
-      const today = new Date().toISOString().slice(0, 10);
-      const [attendance, created] = await StudentAttendance.findOrCreate({
-        where: { studentId: student.id, attendanceDate: today },
-        defaults: { studentId: student.id, attendanceDate: today, status: req.body.status },
-        transaction
-      });
-      if (!created) {
-        await attendance.update({ status: req.body.status }, { transaction });
-      }
-    }
 
     // 3. Update allocation details if provided
     const allocationData = req.body.allocation;
@@ -908,7 +936,8 @@ export const updateStudent = asyncHandler(async (req, res) => {
         // Allocate new room/bed
         const room = await Room.findOne({ where: { number: newRoomNumber }, transaction, lock: transaction.LOCK.UPDATE });
         if (!room) throw Object.assign(new Error('Selected room was not found in the database.'), { status: 404 });
-        if (room.status === 'Maintenance') throw Object.assign(new Error('Maintenance rooms cannot receive allocations.'), { status: 409 });
+        const isMaintenance = room.status === 'Maintenance' || room.operationalStatus === 'Maintenance';
+        if (isMaintenance) throw Object.assign(new Error('Maintenance rooms cannot receive allocations.'), { status: 409 });
 
         const occupiedBeds = await BedAllocation.count({ where: { roomId: room.id, status: 'active' }, transaction });
         if (occupiedBeds >= room.capacity) throw Object.assign(new Error('Selected room is already full.'), { status: 409 });

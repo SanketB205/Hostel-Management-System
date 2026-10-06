@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import {
   Drawer, Box, Typography, IconButton, Button, TextField, MenuItem, 
-  useTheme, styled, CircularProgress, Card, CardContent
+  useTheme, styled, CircularProgress, Card, CardContent, Tooltip,
+  Modal, Backdrop, Select, InputLabel, FormControl, FormHelperText
 } from '@mui/material';
 import { 
-  ArrowLeft, Building, ListOrdered, Settings, Save, RotateCcw, Eye
+  ArrowLeft, Building, ListOrdered, Settings, Save, RotateCcw, Eye, X, SlidersHorizontal
 } from 'lucide-react';
 import { useForm, Controller, useWatch } from 'react-hook-form';
 import { yupResolver } from '@hookform/resolvers/yup';
@@ -56,6 +57,264 @@ const GridBox = styled(Box)(({ theme }) => ({
   }
 }));
 
+// ── Room Configuration Modal ──────────────────────────────────────────────────
+
+const ROOM_TYPES = ['Standard', 'Deluxe', 'Premium', 'Suite'];
+
+function RoomConfigModal({ open, roomNumber, defaultRoomType, defaultCapacity, existingConfig, onSave, onCancel }) {
+  const theme = useTheme();
+  const [roomType, setRoomType] = useState('');
+  const [capacity, setCapacity] = useState('');
+  const [capacityError, setCapacityError] = useState('');
+  const [roomTypeError, setRoomTypeError] = useState('');
+
+  // Sync state whenever the modal opens or its props change
+  useEffect(() => {
+    if (open) {
+      setRoomType(existingConfig?.roomType || defaultRoomType || 'Standard');
+      setCapacity(String(existingConfig?.capacity ?? defaultCapacity ?? ''));
+      setCapacityError('');
+      setRoomTypeError('');
+    }
+  }, [open, roomNumber, existingConfig, defaultRoomType, defaultCapacity]);
+
+  const validate = () => {
+    let valid = true;
+    if (!roomType) {
+      setRoomTypeError('Room type is required.');
+      valid = false;
+    } else {
+      setRoomTypeError('');
+    }
+    const cap = Number(capacity);
+    if (!capacity || isNaN(cap) || !Number.isInteger(cap) || cap <= 0) {
+      setCapacityError('Bed capacity must be a positive whole number.');
+      valid = false;
+    } else {
+      setCapacityError('');
+    }
+    return valid;
+  };
+
+  const handleSave = () => {
+    if (!validate()) return;
+    onSave({ roomType, capacity: Number(capacity) });
+  };
+
+  // Lock body scroll while open (same as RecordPaymentModal)
+  useEffect(() => {
+    if (open) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => { document.body.style.overflow = ''; };
+  }, [open]);
+
+  return (
+    <Modal
+      open={open}
+      onClose={onCancel}
+      closeAfterTransition
+      container={() => document.body}
+      disablePortal={false}
+      slots={{ backdrop: Backdrop }}
+      slotProps={{
+        backdrop: {
+          timeout: 300,
+          sx: {
+            backgroundColor: 'rgba(0, 0, 0, 0.75)',
+            backdropFilter: 'blur(8px)',
+            WebkitBackdropFilter: 'blur(8px)',
+            zIndex: 1400,
+          },
+        },
+      }}
+      sx={{
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        zIndex: 1401,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        p: 2,
+      }}
+    >
+      {/* Modal panel */}
+      <Box
+        sx={{
+          position: 'relative',
+          backgroundColor: 'background.paper',
+          borderRadius: '16px',
+          boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04)',
+          width: '90%',
+          maxWidth: 480,
+          maxHeight: '90vh',
+          overflowY: 'auto',
+          outline: 'none',
+          display: 'flex',
+          flexDirection: 'column',
+          zIndex: 1402,
+        }}
+      >
+        {/* Modal Header */}
+        <Box
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            p: { xs: 2.5, sm: 3 },
+            pb: 2,
+            borderBottom: '1px solid',
+            borderColor: 'divider',
+          }}
+        >
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+            <Box
+              sx={{
+                backgroundColor: theme.palette.primary.main + '18',
+                color: 'primary.main',
+                p: 1,
+                borderRadius: '8px',
+                display: 'flex',
+              }}
+            >
+              <SlidersHorizontal size={20} />
+            </Box>
+            <Box>
+              <Typography variant="h6" sx={{ fontWeight: 700, lineHeight: 1.2 }}>
+                Configure Room
+              </Typography>
+              <Typography variant="body2" sx={{ color: 'primary.main', fontWeight: 600 }}>
+                {roomNumber}
+              </Typography>
+            </Box>
+          </Box>
+          <IconButton
+            onClick={onCancel}
+            size="small"
+            sx={{ backgroundColor: 'action.hover', '&:hover': { backgroundColor: 'action.selected' } }}
+          >
+            <X size={18} />
+          </IconButton>
+        </Box>
+
+        {/* Modal Body */}
+        <Box sx={{ p: { xs: 2.5, sm: 3 }, display: 'flex', flexDirection: 'column', gap: 3 }}>
+
+          {/* Room Number — static display, NOT a focusable/clickable input */}
+          <Box>
+            <Typography
+              variant="caption"
+              sx={{ color: 'text.secondary', fontWeight: 500, mb: 0.5, display: 'block' }}
+            >
+              Room Number
+            </Typography>
+            <Box
+              sx={{
+                px: 1.75,
+                py: 1.25,
+                border: '1px solid',
+                borderColor: 'divider',
+                borderRadius: '4px',
+                backgroundColor: theme.palette.mode === 'light' ? '#F9FAFB' : 'action.hover',
+                userSelect: 'none',
+                pointerEvents: 'none',
+              }}
+            >
+              <Typography variant="body1" sx={{ color: 'text.secondary', fontWeight: 500 }}>
+                {roomNumber}
+              </Typography>
+            </Box>
+          </Box>
+
+          {/* Room Type — standalone Select portals menu to body above the modal */}
+          <FormControl fullWidth error={!!roomTypeError}>
+            <InputLabel id="cfg-room-type-label">Room Type *</InputLabel>
+            <Select
+              labelId="cfg-room-type-label"
+              label="Room Type *"
+              value={roomType}
+              onChange={(e) => { setRoomType(e.target.value); setRoomTypeError(''); }}
+              MenuProps={{
+                container: document.body,
+                PaperProps: {
+                  sx: { maxHeight: 240, zIndex: 2000 },
+                },
+                sx: { zIndex: 2000 },
+              }}
+            >
+              {ROOM_TYPES.map((t) => (
+                <MenuItem key={t} value={t}>{t}</MenuItem>
+              ))}
+            </Select>
+            {roomTypeError && <FormHelperText>{roomTypeError}</FormHelperText>}
+          </FormControl>
+
+          {/* Bed Capacity — type="text" with integer-only filtering avoids number-input quirks inside Modal */}
+          <TextField
+            label="Bed Capacity *"
+            type="text"
+            inputMode="numeric"
+            value={capacity}
+            onChange={(e) => {
+              const val = e.target.value;
+              // Allow only digits (no decimals, no negatives, no leading zeros beyond '0')
+              if (val === '' || /^[1-9][0-9]*$/.test(val)) {
+                setCapacity(val);
+                setCapacityError('');
+              }
+            }}
+            fullWidth
+            error={!!capacityError}
+            helperText={capacityError || 'Must be a positive whole number.'}
+            placeholder="e.g. 2"
+          />
+        </Box>
+
+        {/* Modal Footer */}
+        <Box
+          sx={{
+            display: 'flex',
+            justifyContent: 'flex-end',
+            gap: 2,
+            p: { xs: 2.5, sm: 3 },
+            pt: 0,
+          }}
+        >
+          <Button
+            variant="outlined"
+            onClick={onCancel}
+            sx={{
+              px: 3,
+              color: 'text.primary',
+              borderColor: theme.palette.mode === 'light' ? '#D1D5DB' : 'divider',
+              '&:hover': { backgroundColor: 'action.hover', borderColor: 'text.primary' },
+            }}
+          >
+            Cancel
+          </Button>
+          <Button
+            variant="contained"
+            onClick={handleSave}
+            sx={{
+              px: 3,
+              backgroundColor: '#4F46E5',
+              '&:hover': { backgroundColor: '#4338CA' },
+              fontWeight: 600,
+            }}
+          >
+            Save Changes
+          </Button>
+        </Box>
+      </Box>
+    </Modal>
+  );
+}
+
 // Validation Schema
 const schema = yup.object().shape({
   blockName: yup.string().required('Block Name is required'),
@@ -102,14 +361,23 @@ export default function BulkRoomDrawer({ open, onClose, onSave }) {
   const roomsPerFloor = useWatch({ control, name: 'roomsPerFloor' });
   const startingRoomNumber = useWatch({ control, name: 'startingRoomNumber' });
   const roomNumberFormat = useWatch({ control, name: 'roomNumberFormat' });
+  const globalRoomType = useWatch({ control, name: 'roomType' });
+  const globalCapacity = useWatch({ control, name: 'capacity' });
 
   const [previewData, setPreviewData] = useState(null);
+
+  // Map of { [roomNumber]: { roomType, capacity } } for per-room customizations
+  const [roomCustomizations, setRoomCustomizations] = useState({});
+
+  // Modal state
+  const [modalState, setModalState] = useState({ open: false, roomNumber: null });
 
   useEffect(() => {
     if (blockName && totalFloors > 0 && roomsPerFloor > 0 && startingRoomNumber && /^[0-9]+$/.test(startingRoomNumber)) {
       const floors = [];
       let totalRoomsCount = 0;
       let startNum = parseInt(startingRoomNumber, 10);
+
       if (isNaN(startNum)) {
         setPreviewData(null);
         return;
@@ -146,8 +414,8 @@ export default function BulkRoomDrawer({ open, onClose, onSave }) {
     setIsSubmitting(true);
     await new Promise(resolve => setTimeout(resolve, 800));
     
-    // Pass the previewData along with form data so parent knows the exact rooms generated
-    const result = onSave({ ...data, generatedRooms: previewData });
+    // Pass the previewData and roomCustomizations so parent can apply per-room settings
+    const result = onSave({ ...data, generatedRooms: previewData, roomCustomizations });
     setIsSubmitting(false);
     
     if (result && result.success === false) {
@@ -161,7 +429,25 @@ export default function BulkRoomDrawer({ open, onClose, onSave }) {
   const handleClose = () => {
     reset();
     setPreviewData(null);
+    setRoomCustomizations({});
+    setModalState({ open: false, roomNumber: null });
     onClose();
+  };
+
+  const handleRoomChipClick = (roomNumber) => {
+    setModalState({ open: true, roomNumber });
+  };
+
+  const handleModalSave = ({ roomType, capacity }) => {
+    setRoomCustomizations(prev => ({
+      ...prev,
+      [modalState.roomNumber]: { roomType, capacity },
+    }));
+    setModalState({ open: false, roomNumber: null });
+  };
+
+  const handleModalCancel = () => {
+    setModalState({ open: false, roomNumber: null });
   };
 
   const handlePreviewScroll = () => {
@@ -170,6 +456,7 @@ export default function BulkRoomDrawer({ open, onClose, onSave }) {
       el.scrollIntoView({ behavior: 'smooth' });
     }
   };
+
 
   return (
     <Drawer
@@ -302,8 +589,20 @@ export default function BulkRoomDrawer({ open, onClose, onSave }) {
                 </Box>
               ) : (
                 <Box>
-                  <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 2, color: 'primary.main' }}>
-                    Total Rooms To Be Created: {previewData.totalRoomsCount}
+                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2, flexWrap: 'wrap', gap: 1 }}>
+                    <Typography variant="subtitle1" sx={{ fontWeight: 600, color: 'primary.main' }}>
+                      Total Rooms To Be Created: {previewData.totalRoomsCount}
+                    </Typography>
+                    {Object.keys(roomCustomizations).length > 0 && (
+                      <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                        <Box component="span" sx={{ color: '#4F46E5', fontWeight: 600 }}>
+                          {Object.keys(roomCustomizations).length}
+                        </Box>{' '}room{Object.keys(roomCustomizations).length !== 1 ? 's' : ''} customized
+                      </Typography>
+                    )}
+                  </Box>
+                  <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mb: 1.5 }}>
+                    Click any room number to customize its type and bed capacity individually.
                   </Typography>
                   <Box sx={{ 
                     maxHeight: 300, 
@@ -320,22 +619,62 @@ export default function BulkRoomDrawer({ open, onClose, onSave }) {
                           Floor {floorObj.floor}
                         </Typography>
                         <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                          {floorObj.rooms.slice(0, 10).map((rm) => (
-                            <Box 
-                              key={rm} 
-                              sx={{ 
-                                px: 1.5, 
-                                py: 0.5, 
-                                backgroundColor: 'background.paper', 
-                                border: '1px solid', 
-                                borderColor: 'divider',
-                                borderRadius: 1,
-                                fontSize: '0.875rem'
-                              }}
-                            >
-                              {rm}
-                            </Box>
-                          ))}
+                          {floorObj.rooms.slice(0, 10).map((rm) => {
+                            const isCustomized = !!roomCustomizations[rm];
+                            const cfg = roomCustomizations[rm];
+                            const tooltipTitle = isCustomized
+                              ? `Custom: ${cfg.roomType} · ${cfg.capacity} bed${cfg.capacity !== 1 ? 's' : ''}`
+                              : 'Click to customize this room';
+                            return (
+                              <Tooltip key={rm} title={tooltipTitle} arrow placement="top">
+                                <Box
+                                  onClick={() => handleRoomChipClick(rm)}
+                                  sx={{
+                                    position: 'relative',
+                                    px: 1.5,
+                                    py: 0.5,
+                                    backgroundColor: isCustomized
+                                      ? 'rgba(79,70,229,0.08)'
+                                      : 'background.paper',
+                                    border: '1px solid',
+                                    borderColor: isCustomized ? '#4F46E5' : 'divider',
+                                    borderRadius: 1,
+                                    fontSize: '0.875rem',
+                                    cursor: 'pointer',
+                                    fontWeight: isCustomized ? 600 : 400,
+                                    color: isCustomized ? '#4F46E5' : 'text.primary',
+                                    userSelect: 'none',
+                                    transition: 'all 0.15s ease',
+                                    '&:hover': {
+                                      backgroundColor: isCustomized ? 'rgba(79,70,229,0.14)' : 'action.hover',
+                                      borderColor: '#4F46E5',
+                                      color: '#4F46E5',
+                                      transform: 'translateY(-1px)',
+                                      boxShadow: '0 2px 6px rgba(79,70,229,0.2)',
+                                    },
+                                  }}
+                                >
+                                  {rm}
+                                  {isCustomized && (
+                                    <Box
+                                      component="span"
+                                      sx={{
+                                        position: 'absolute',
+                                        top: -5,
+                                        right: -5,
+                                        width: 10,
+                                        height: 10,
+                                        borderRadius: '50%',
+                                        backgroundColor: '#4F46E5',
+                                        border: '1.5px solid',
+                                        borderColor: 'background.paper',
+                                      }}
+                                    />
+                                  )}
+                                </Box>
+                              </Tooltip>
+                            );
+                          })}
                           {floorObj.rooms.length > 10 && (
                             <Box 
                               sx={{ 
@@ -351,21 +690,61 @@ export default function BulkRoomDrawer({ open, onClose, onSave }) {
                               ...
                             </Box>
                           )}
-                          {floorObj.rooms.length > 10 && (
-                            <Box 
-                              sx={{ 
-                                px: 1.5, 
-                                py: 0.5, 
-                                backgroundColor: 'background.paper', 
-                                border: '1px solid', 
-                                borderColor: 'divider',
-                                borderRadius: 1,
-                                fontSize: '0.875rem'
-                              }}
-                            >
-                              {floorObj.rooms[floorObj.rooms.length - 1]}
-                            </Box>
-                          )}
+                          {floorObj.rooms.length > 10 && (() => {
+                            const rm = floorObj.rooms[floorObj.rooms.length - 1];
+                            const isCustomized = !!roomCustomizations[rm];
+                            const cfg = roomCustomizations[rm];
+                            const tooltipTitle = isCustomized
+                              ? `Custom: ${cfg.roomType} · ${cfg.capacity} bed${cfg.capacity !== 1 ? 's' : ''}`
+                              : 'Click to customize this room';
+                            return (
+                              <Tooltip key={rm} title={tooltipTitle} arrow placement="top">
+                                <Box
+                                  onClick={() => handleRoomChipClick(rm)}
+                                  sx={{
+                                    position: 'relative',
+                                    px: 1.5,
+                                    py: 0.5,
+                                    backgroundColor: isCustomized ? 'rgba(79,70,229,0.08)' : 'background.paper',
+                                    border: '1px solid',
+                                    borderColor: isCustomized ? '#4F46E5' : 'divider',
+                                    borderRadius: 1,
+                                    fontSize: '0.875rem',
+                                    cursor: 'pointer',
+                                    fontWeight: isCustomized ? 600 : 400,
+                                    color: isCustomized ? '#4F46E5' : 'text.primary',
+                                    userSelect: 'none',
+                                    transition: 'all 0.15s ease',
+                                    '&:hover': {
+                                      backgroundColor: isCustomized ? 'rgba(79,70,229,0.14)' : 'action.hover',
+                                      borderColor: '#4F46E5',
+                                      color: '#4F46E5',
+                                      transform: 'translateY(-1px)',
+                                      boxShadow: '0 2px 6px rgba(79,70,229,0.2)',
+                                    },
+                                  }}
+                                >
+                                  {rm}
+                                  {isCustomized && (
+                                    <Box
+                                      component="span"
+                                      sx={{
+                                        position: 'absolute',
+                                        top: -5,
+                                        right: -5,
+                                        width: 10,
+                                        height: 10,
+                                        borderRadius: '50%',
+                                        backgroundColor: '#4F46E5',
+                                        border: '1.5px solid',
+                                        borderColor: 'background.paper',
+                                      }}
+                                    />
+                                  )}
+                                </Box>
+                              </Tooltip>
+                            );
+                          })()}
                         </Box>
                       </Box>
                     ))}
@@ -376,6 +755,18 @@ export default function BulkRoomDrawer({ open, onClose, onSave }) {
           </SectionCard>
 
         </FormContainer>
+
+        {/* Room Configuration Modal */}
+        <RoomConfigModal
+          open={modalState.open}
+          roomNumber={modalState.roomNumber}
+          defaultRoomType={globalRoomType}
+          defaultCapacity={globalCapacity}
+          existingConfig={modalState.roomNumber ? roomCustomizations[modalState.roomNumber] : undefined}
+          onSave={handleModalSave}
+          onCancel={handleModalCancel}
+        />
+
 
         {/* Sticky Actions Footer */}
         <Box sx={{ 
@@ -392,7 +783,7 @@ export default function BulkRoomDrawer({ open, onClose, onSave }) {
         }}>
           <Button 
             variant="text" 
-            onClick={() => { reset(); setPreviewData(null); }} 
+            onClick={() => { reset(); setPreviewData(null); setRoomCustomizations({}); }} 
             disabled={isSubmitting}
             startIcon={<RotateCcw size={18} />}
             sx={{ 

@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import dayjs from 'dayjs';
 import { Box, Typography, Snackbar, Alert, CircularProgress } from '@mui/material';
 import StudentStats from '../components/students/StudentStats';
 import StudentFilters from '../components/students/StudentFilters';
@@ -30,7 +31,8 @@ export default function StudentsPage() {
   const fetchStudents = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await studentsApi.list();
+      const todayDate = dayjs().format('YYYY-MM-DD');
+      const res = await studentsApi.list({ date: todayDate });
       // Normalise backend shape → UI shape
       const normalised = (res.data || []).map(s => ({
         id: s.id,
@@ -171,7 +173,8 @@ export default function StudentsPage() {
       prev.map(s => s.id === studentId ? { ...s, status: newStatus } : s)
     );
     try {
-      await studentsApi.updateStatus(studentId, newStatus);
+      const todayDate = dayjs().format('YYYY-MM-DD');
+      await studentsApi.updateStatus(studentId, newStatus, todayDate);
     } catch (err) {
       // Revert on failure
       await fetchStudents();

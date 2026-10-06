@@ -8,7 +8,7 @@ import { Op } from 'sequelize';
 const buildBlockTree = async (blocks) => {
   return Promise.all(blocks.map(async (block) => {
     const blockJson = block.toJSON();
-    let totalRooms = 0, available = 0, occupied = 0, maintenance = 0;
+    let totalRooms = 0, available = 0, occupied = 0, maintenance = 0, reserved = 0;
     let totalCapacity = 0, totalBeds = 0;
 
     const floors = await Promise.all((blockJson.floors || []).map(async (floor) => {
@@ -20,27 +20,36 @@ const buildBlockTree = async (blocks) => {
         totalBeds += bedsOccupied;
         totalRooms++;
 
-        // Derive live status from real-time bed count — never trust the stored value
-        // (Maintenance is the only status set manually; everything else is computed)
+        const opStatus = room.operationalStatus || 'Available';
+
+        // Status priority:
+        // 1. Admin override: Maintenance or Reserved → always show that
+        // 2. Otherwise: calculate from live bed count
         let liveStatus;
-        if (room.status === 'Maintenance') {
+        if (opStatus === 'Maintenance') {
           liveStatus = 'Maintenance';
           maintenance++;
-        } else if (bedsOccupied === 0) {
-          liveStatus = 'Available';
-          available++; fAvailable++;
-        } else if (bedsOccupied >= room.capacity) {
-          liveStatus = 'Full';
-          occupied++; fOccupied++;
+        } else if (opStatus === 'Reserved') {
+          liveStatus = 'Reserved';
+          reserved++;
         } else {
-          liveStatus = 'Occupied';
-          occupied++; fOccupied++;
+          // operationalStatus === 'Available' → compute from occupancy
+          if (bedsOccupied === 0) {
+            liveStatus = 'Available';
+            available++; fAvailable++;
+          } else if (bedsOccupied >= room.capacity) {
+            liveStatus = 'Full';
+            occupied++; fOccupied++;
+          } else {
+            liveStatus = 'Occupied';
+            occupied++; fOccupied++;
+          }
         }
 
-        return { ...room, bedsOccupied, status: liveStatus };
+        return { ...room, bedsOccupied, status: liveStatus, operationalStatus: opStatus };
       }));
 
-      // Natural sort: A101, A102, A103 … A110
+      // Natural sort: A101, A102 … A110
       rooms.sort((a, b) =>
         String(a.number).localeCompare(String(b.number), undefined, { numeric: true, sensitivity: 'base' })
       );
@@ -63,6 +72,7 @@ const buildBlockTree = async (blocks) => {
       available,
       occupied,
       maintenance,
+      reserved,
       occupancyRate,
       totalFloors: floors.length,
       totalCapacity,
@@ -70,6 +80,7 @@ const buildBlockTree = async (blocks) => {
     };
   }));
 };
+
 
 // ── blocks ───────────────────────────────────────────────────────────────────
 
@@ -214,10 +225,11 @@ export const bulkCreateRooms = asyncHandler(async (req, res) => {
    *   roomNumberFormat: "Block + Floor + Room Number" | "Numeric Only",
    *   roomType: "Standard",
    *   capacity: 4,
-   *   defaultStatus: "Available"
+   *   defaultStatus: "Available",
+   *   roomCustomizations: { "A101": { roomType: "Deluxe", capacity: 2 }, ... } // optional per-room overrides
    * }
    */
-  const { blockName, totalFloors, roomsPerFloor, startingRoomNumber, roomNumberFormat, roomType, capacity, defaultStatus } = req.body;
+  const { blockName, totalFloors, roomsPerFloor, startingRoomNumber, roomNumberFormat, roomType, capacity, defaultStatus, roomCustomizations } = req.body;
   if (!blockName || !totalFloors || !roomsPerFloor || !startingRoomNumber) {
     return res.status(400).json({ message: 'blockName, totalFloors, roomsPerFloor and startingRoomNumber are required.' });
   }
@@ -225,6 +237,14 @@ export const bulkCreateRooms = asyncHandler(async (req, res) => {
   const blockPrefix = String(blockName).replace(/^block\s*/i, '').trim().toUpperCase();
   const baseSuffix = parseInt(startingRoomNumber, 10) % 100;
   const report = { rooms: 0, skipped: [] };
+
+  // Normalize customizations: keys should be uppercase to match generated room numbers
+  const customizations = {};
+  if (roomCustomizations && typeof roomCustomizations === 'object') {
+    Object.entries(roomCustomizations).forEach(([key, val]) => {
+      customizations[String(key).toUpperCase()] = val;
+    });
+  }
 
   await sequelize.transaction(async (t) => {
     // find-or-create the block
@@ -243,7 +263,14 @@ export const bulkCreateRooms = asyncHandler(async (req, res) => {
         const existing = await Room.findOne({ where: { number: roomNumber }, transaction: t });
         if (existing) { report.skipped.push(roomNumber); continue; }
 
-        await Room.create({ floorId: floor.id, number: roomNumber, type: roomType || 'Standard', capacity: Number(capacity) || 1, status: defaultStatus || 'Available' }, { transaction: t });
+        // Apply per-room customization if present, otherwise fall back to global defaults
+        const customConfig = customizations[roomNumber.toUpperCase()];
+        const finalType = customConfig?.roomType || roomType || 'Standard';
+        const finalCapacity = (customConfig?.capacity != null && Number(customConfig.capacity) > 0)
+          ? Number(customConfig.capacity)
+          : (Number(capacity) || 1);
+
+        await Room.create({ floorId: floor.id, number: roomNumber, type: finalType, capacity: finalCapacity, status: defaultStatus || 'Available' }, { transaction: t });
         report.rooms++;
       }
     }
@@ -251,6 +278,7 @@ export const bulkCreateRooms = asyncHandler(async (req, res) => {
 
   res.status(201).json({ message: `Created ${report.rooms} rooms.`, data: report });
 });
+
 
 // ── list all rooms ────────────────────────────────────────────────────────────
 
@@ -322,6 +350,56 @@ export const deleteRoom = asyncHandler(async (req, res) => {
   res.json({ message: `Room ${room.number} deleted successfully.` });
 });
 
+// ── update room operational status (admin) ───────────────────────────────────
+
+export const updateRoomOperationalStatus = asyncHandler(async (req, res) => {
+  const { roomId } = req.params;
+  const { operationalStatus } = req.body;
+
+  const ALLOWED_STATUSES = ['Available', 'Maintenance', 'Reserved'];
+  if (!ALLOWED_STATUSES.includes(operationalStatus)) {
+    return res.status(400).json({
+      message: `Invalid status "${operationalStatus}". Allowed values: Available, Maintenance, Reserved.`,
+    });
+  }
+
+  const room = await Room.findByPk(roomId);
+  if (!room) return res.status(404).json({ message: 'Room not found.' });
+
+  // Maintenance / Reserved → block if students are still allocated
+  if (operationalStatus === 'Maintenance' || operationalStatus === 'Reserved') {
+    const activeCount = await BedAllocation.count({ where: { roomId, status: 'active' } });
+    if (activeCount > 0) {
+      return res.status(409).json({
+        message: `Cannot set room ${room.number} to ${operationalStatus}. ${activeCount} student(s) are still allocated. Transfer all students first.`,
+        activeAllocations: activeCount,
+      });
+    }
+  }
+
+  await room.update({ operationalStatus });
+
+  // Compute effective display status for the response
+  const bedsOccupied = await BedAllocation.count({ where: { roomId, status: 'active' } });
+  let effectiveStatus;
+  if (operationalStatus === 'Maintenance') {
+    effectiveStatus = 'Maintenance';
+  } else if (operationalStatus === 'Reserved') {
+    effectiveStatus = 'Reserved';
+  } else {
+    effectiveStatus = bedsOccupied >= room.capacity ? 'Full' : bedsOccupied > 0 ? 'Occupied' : 'Available';
+  }
+
+  res.json({
+    data: {
+      ...room.toJSON(),
+      operationalStatus,
+      status: effectiveStatus,
+      bedsOccupied,
+    },
+  });
+});
+
 // ── dashboard stats ──────────────────────────────────────────────────────────
 
 export const getDashboardStats = asyncHandler(async (req, res) => {
@@ -340,7 +418,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
     }
   });
 
-  // 2. Room Status counts
+  // 2. Room Status counts — use operationalStatus for admin overrides, then compute from beds
   const rooms = await Room.findAll({
     include: [{
       model: BedAllocation,
@@ -355,9 +433,12 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
   let maintenanceRooms = 0;
 
   rooms.forEach(r => {
+    const opStatus = r.operationalStatus || 'Available';
     const bedsOccupied = r.allocations?.length || 0;
-    if (r.status === 'Maintenance') {
+    if (opStatus === 'Maintenance') {
       maintenanceRooms++;
+    } else if (opStatus === 'Reserved') {
+      // Reserved rooms are neither available nor occupied in dashboard stats
     } else if (bedsOccupied === 0) {
       availableRooms++;
     } else {
@@ -412,3 +493,4 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
     }
   });
 });
+

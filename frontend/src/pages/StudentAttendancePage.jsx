@@ -126,7 +126,7 @@ export default function StudentAttendancePage() {
   const [selectedDate, setSelectedDate] = useState(dayjs());
   const [attendance, setAttendance] = useState({});
   const [analytics, setAnalytics] = useState(null);
-  const [trendRange, setTrendRange] = useState('30D');
+  const [trendRange, setTrendRange] = useState('Today');
   const [isDateMode, setIsDateMode] = useState(false);
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
   const [loading, setLoading] = useState(false);
@@ -297,7 +297,6 @@ export default function StudentAttendancePage() {
              </Button>
              <Button
                onClick={() => { setTrendRange('7D'); setIsDateMode(false); setSelectedDate(dayjs()); }}
-               disabled={isDateMode}
                sx={{
                  backgroundColor: trendRange === '7D' ? '#4F46E5 !important' : 'transparent',
                  color: trendRange === '7D' ? '#ffffff !important' : '#4F46E5',
@@ -307,7 +306,6 @@ export default function StudentAttendancePage() {
              </Button>
              <Button
                onClick={() => { setTrendRange('30D'); setIsDateMode(false); setSelectedDate(dayjs()); }}
-               disabled={isDateMode}
                sx={{
                  backgroundColor: trendRange === '30D' ? '#4F46E5 !important' : 'transparent',
                  color: trendRange === '30D' ? '#ffffff !important' : '#4F46E5',
@@ -458,7 +456,7 @@ export default function StudentAttendancePage() {
                 <LineChart data={trendData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E2E8F0" />
                   <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#64748B', fontSize: 12 }} />
-                  <YAxis axisLine={false} tickLine={false} tick={{ fill: '#64748B', fontSize: 12 }} domain={[50, 100]} />
+                  <YAxis axisLine={false} tickLine={false} tick={{ fill: '#64748B', fontSize: 12 }} domain={[0, 100]} />
                   <ChartTooltip 
                     contentStyle={{ 
                       borderRadius: 8, 
@@ -743,7 +741,7 @@ export default function StudentAttendancePage() {
                 <BarChart data={monthlyRateDataComputed} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E2E8F0" />
                   <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#64748B', fontSize: 12 }} />
-                  <YAxis axisLine={false} tickLine={false} tick={{ fill: '#64748B', fontSize: 12 }} domain={[60, 100]} />
+                  <YAxis axisLine={false} tickLine={false} tick={{ fill: '#64748B', fontSize: 12 }} domain={[0, 100]} />
                   <ChartTooltip 
                     contentStyle={{ 
                       borderRadius: 8, 

@@ -104,6 +104,7 @@ const STATUS_COLORS = {
   Leave:   { color: '#2563EB', bg: 'rgba(59,130,246,0.1)' },
   Late:    { color: '#EA580C', bg: 'rgba(249,115,22,0.1)' },
   Absent:  { color: '#DC2626', bg: 'rgba(239,68,68,0.1)'  },
+  'Not Marked': { color: '#6B7280', bg: 'rgba(107,114,128,0.1)' },
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -220,7 +221,7 @@ export default function ViewStudentDetailsPage() {
   const activeAlloc = (student.allocations || []).find(a => a.status === 'active');
   const room        = activeAlloc?.room;
 
-  const statusStyle = STATUS_COLORS[student.status] || STATUS_COLORS.Present;
+  const statusStyle = STATUS_COLORS[student.status] || STATUS_COLORS['Not Marked'];
 
   return (
     <Box sx={{ animation: 'fadeIn 0.5s ease-out' }}>

@@ -2,8 +2,14 @@ import { sequelize } from '../config/database.js';
 import { BedAllocation, Room, Student } from '../models/index.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 
+/**
+ * Recalculates and persists the computed occupancy status on a room.
+ * Skipped entirely when the admin has set operationalStatus to Maintenance or Reserved
+ * — those overrides must not be erased by allocation activity.
+ */
 const updateRoomStatus = async (room, transaction) => {
-  if (room.status === 'Maintenance') return;
+  const opStatus = room.operationalStatus || 'Available';
+  if (opStatus === 'Maintenance' || opStatus === 'Reserved') return;
   const occupiedBeds = await BedAllocation.count({ where: { roomId: room.id, status: 'active' }, transaction });
   const status = occupiedBeds >= room.capacity ? 'Full' : occupiedBeds > 0 ? 'Occupied' : 'Available';
   await room.update({ status }, { transaction });
@@ -20,7 +26,12 @@ export const allocateBed = asyncHandler(async (req, res) => {
     ]);
     if (!student) throw Object.assign(new Error('Student not found.'), { status: 404 });
     if (!room) throw Object.assign(new Error('Room not found.'), { status: 404 });
-    if (room.status === 'Maintenance') throw Object.assign(new Error('Maintenance rooms cannot receive allocations.'), { status: 409 });
+
+    // Block allocations based on admin-controlled operationalStatus / status
+    const isMaintenance = room.status === 'Maintenance' || room.operationalStatus === 'Maintenance';
+    if (isMaintenance) {
+      throw Object.assign(new Error('Room is under Maintenance and cannot receive allocations.'), { status: 409 });
+    }
 
     const activeStudentAllocation = await BedAllocation.findOne({ where: { studentId, status: 'active' }, transaction, lock: transaction.LOCK.UPDATE });
     if (activeStudentAllocation) throw Object.assign(new Error('Student already has an active room allocation.'), { status: 409 });
@@ -51,3 +62,4 @@ export const vacateBed = asyncHandler(async (req, res) => {
 
   res.status(204).send();
 });
+
