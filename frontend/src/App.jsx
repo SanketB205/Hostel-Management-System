@@ -29,8 +29,17 @@ import { RoomProvider } from './contexts/RoomContext';
 import { AuthProvider } from './contexts/AuthContext';
 import { ProtectedRoute, PublicRoute } from './components/ProtectedRoute';
 import { useAuth } from './contexts/AuthContext';
+import StudentDashboard from './components/student/StudentDashboard';
+
+import StudentPersonalAttendancePage from './pages/StudentPersonalAttendancePage';
 
 function DashboardView() {
+  const { user } = useAuth();
+
+  if (user?.role === 'student') {
+    return <StudentDashboard />;
+  }
+
   return (
     <>
       <WelcomeBanner />
@@ -51,6 +60,21 @@ function ComplaintsRoute() {
 function FinancesRoute() {
   const { user } = useAuth();
   return user?.role === 'student' ? <StudentFinancePage /> : <FinancesPage />;
+}
+
+/** Routes /attendance/student to the correct page based on role */
+function StudentAttendanceRoute() {
+  const { user } = useAuth();
+  return user?.role === 'student' ? <StudentPersonalAttendancePage /> : <StudentAttendancePage />;
+}
+
+/** Guard for Admin-only routes (hidden/restricted for Rector & Student) */
+function AdminOnlyRoute({ children }) {
+  const { user } = useAuth();
+  if (user?.role !== 'admin') {
+    return <Navigate to="/dashboard" replace />;
+  }
+  return children;
 }
 
 function DashboardLayout() {
@@ -76,17 +100,19 @@ function DashboardLayout() {
               <Route path="/students/:id" element={<ViewStudentDetailsPage />} />
               <Route path="/students/:id/edit" element={<EditStudentPage />} />
               <Route path="/students/edit/:id" element={<EditStudentPage />} />
-              <Route path="/staff" element={<StaffPage />} />
-              <Route path="/staff/:id" element={<ViewStaffDetailsPage />} />
-              <Route path="/staff/add" element={<StaffRegistrationPage />} />
+              <Route path="/staff" element={<AdminOnlyRoute><StaffPage /></AdminOnlyRoute>} />
+              <Route path="/staff/:id" element={<AdminOnlyRoute><ViewStaffDetailsPage /></AdminOnlyRoute>} />
+              <Route path="/staff/add" element={<AdminOnlyRoute><StaffRegistrationPage /></AdminOnlyRoute>} />
               <Route path="/complaints" element={<ComplaintsRoute />} />
               <Route path="/complaints/my" element={<StudentComplaintsPage />} />
               <Route path="/complaints/raise" element={<RaiseComplaintPage />} />
               <Route path="/rooms" element={<RoomsPage />} />
               <Route path="/rooms/block/:blockId" element={<BlockDetailPage />} />
               <Route path="/room-allocation" element={<RoomAllocationPage />} />
-              <Route path="/attendance/student" element={<StudentAttendancePage />} />
-              <Route path="/attendance/staff" element={<StaffAttendancePage />} />
+              <Route path="/attendance/student" element={<StudentAttendanceRoute />} />
+              <Route path="/attendance/student/:id" element={<StudentPersonalAttendancePage />} />
+              <Route path="/students/:id/attendance" element={<StudentPersonalAttendancePage />} />
+              <Route path="/attendance/staff" element={<AdminOnlyRoute><StaffAttendancePage /></AdminOnlyRoute>} />
               <Route path="/finances" element={<FinancesRoute />} />
               <Route path="/settings" element={<SettingsPage />} />
               <Route path="*" element={<Navigate to="/login" replace />} />

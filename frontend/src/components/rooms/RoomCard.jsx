@@ -52,7 +52,6 @@ function getInitials(name = '') {
 
 function StudentCard({ student, index }) {
   const avatarColor = AVATAR_COLORS[index % AVATAR_COLORS.length];
-  const chipStyle = STATUS_CHIP[student.status] || STATUS_CHIP.Late;
 
   return (
     <Card sx={{
@@ -85,12 +84,6 @@ function StudentCard({ student, index }) {
           </Box>
         </Box>
       </Box>
-
-      <Chip
-        label={student.status}
-        size="small"
-        sx={{ fontSize: '0.7rem', fontWeight: 600, flexShrink: 0, backgroundColor: chipStyle.bg, color: chipStyle.color }}
-      />
     </Card>
   );
 }

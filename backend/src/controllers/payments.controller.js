@@ -2,6 +2,7 @@ import { Op } from 'sequelize';
 import { sequelize } from '../config/database.js';
 import { Student, Payment } from '../models/index.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
+import { getStudentFinancialSummary } from '../services/finance.service.js';
 
 // ── Get student payment summary and history ───────────────────────────────────
 
@@ -85,16 +86,8 @@ export const createPayment = asyncHandler(async (req, res) => {
   }
 
   const result = await sequelize.transaction(async (transaction) => {
-    // 1. Verify student exists and get current balance
+    // 1. Verify student exists
     const student = await Student.findByPk(studentId, {
-      include: [
-        {
-          model: Payment,
-          as: 'payments',
-          where: { status: 'Success' },
-          required: false
-        }
-      ],
       transaction,
       lock: transaction.LOCK.UPDATE
     });
@@ -103,10 +96,11 @@ export const createPayment = asyncHandler(async (req, res) => {
       throw Object.assign(new Error('Student not found.'), { status: 404 });
     }
 
-    // 2. Calculate current balance
-    const totalBillable = parseFloat(student.totalBillable || 0);
-    const totalPaid = (student.payments || []).reduce((sum, p) => sum + parseFloat(p.amount || 0), 0);
-    const currentBalance = Math.max(0, totalBillable - totalPaid);
+    // 2. Get current financial summary from Finance Service
+    // Note: We call this BEFORE the transaction lock to get accurate data
+    // The transaction lock on Student ensures no concurrent payment modifications
+    const financialSummary = await getStudentFinancialSummary(studentId);
+    const currentBalance = financialSummary.balanceDue;
 
     // 3. Validate payment amount doesn't exceed balance
     const paymentAmount = parseFloat(amount);
@@ -137,7 +131,10 @@ export const createPayment = asyncHandler(async (req, res) => {
     return payment;
   });
 
-  // Return created payment
+  // Get updated financial summary after payment creation
+  const updatedSummary = await getStudentFinancialSummary(studentId);
+
+  // Return created payment with updated financial summary
   res.status(201).json({
     message: 'Payment recorded successfully.',
     data: {
@@ -151,6 +148,13 @@ export const createPayment = asyncHandler(async (req, res) => {
       receipt: null,
       status: result.status,
       receiptNo: result.receiptNo,
+    },
+    // Include updated financial summary for frontend
+    summary: {
+      totalBillable: updatedSummary.totalBillable,
+      totalPaid: updatedSummary.totalPaid,
+      balanceDue: updatedSummary.balanceDue,
+      paymentStatus: updatedSummary.paymentStatus,
     }
   });
 });

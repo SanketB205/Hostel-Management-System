@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import {
-  Box, Typography, Card, Chip, Button, Drawer, IconButton,
+  Box, Typography, Card, Chip, Button, IconButton,
   useTheme, styled, Radio, RadioGroup, FormControlLabel, FormControl,
   Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
-  TablePagination, Divider, Modal, Backdrop, CircularProgress,
+  TablePagination, Divider, Modal, Backdrop, CircularProgress, TextField,
 } from '@mui/material';
 import { useAuth } from '../contexts/AuthContext';
 import { students as studentsApi } from '../api';
@@ -274,19 +274,46 @@ function PaymentDueSection({ data, onPayNow }) {
 // ─── Payment Amount Selection Drawer ───────────────────────────────────────────
 function PaymentSelectionModal({ open, onClose, data, onContinue }) {
   const theme = useTheme();
-  const [selectedOption, setSelectedOption] = useState('full');
+  const [customAmount, setCustomAmount] = useState('');
+  const [error, setError] = useState('');
 
-  const fullAmount = data.pending;
-  const halfAmount = Math.floor(data.totalFee * 0.5);
-  
-  // If already paid more than 50%, don't allow 50% option
-  const allow50Percent = data.paid < halfAmount;
+  const balanceDue = data.pending;
 
-  const amountToPay = selectedOption === 'full' ? fullAmount : halfAmount;
-  const remainingAfterPayment = data.pending - amountToPay;
+  const handleAmountChange = (e) => {
+    const value = e.target.value;
+    // Allow only numbers and decimal point
+    if (value === '' || /^\d*\.?\d*$/.test(value)) {
+      setCustomAmount(value);
+      setError('');
+    }
+  };
 
   const handleContinue = () => {
-    onContinue(amountToPay);
+    const amount = parseFloat(customAmount);
+    
+    // Validation
+    if (!customAmount || isNaN(amount)) {
+      setError('Please enter a valid amount');
+      return;
+    }
+    
+    if (amount <= 0) {
+      setError('Amount must be greater than zero');
+      return;
+    }
+    
+    if (amount > balanceDue) {
+      setError(`Amount cannot exceed balance due of ₹${balanceDue.toLocaleString('en-IN')}`);
+      return;
+    }
+    
+    onContinue(amount);
+  };
+
+  const handleKeyPress = (e) => {
+    if (e.key === 'Enter') {
+      handleContinue();
+    }
   };
 
   return (
@@ -355,7 +382,7 @@ function PaymentSelectionModal({ open, onClose, data, onContinue }) {
               Pay Hostel Fee
             </Typography>
             <Typography variant="body2" color="text.secondary">
-              Choose how much you want to pay
+              Enter the amount you want to pay
             </Typography>
           </Box>
           <IconButton onClick={onClose} size="small" sx={{ mt: -0.5 }}>
@@ -365,7 +392,7 @@ function PaymentSelectionModal({ open, onClose, data, onContinue }) {
 
         {/* Content */}
         <Box sx={{ p: 3 }}>
-          {/* Remaining Amount Display */}
+          {/* Balance Due Display */}
           <Box sx={{
             p: 3, borderRadius: 2, mb: 3,
             backgroundColor: 'rgba(79,70,229,0.08)',
@@ -373,112 +400,87 @@ function PaymentSelectionModal({ open, onClose, data, onContinue }) {
             textAlign: 'center',
           }}>
             <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600, display: 'block', mb: 1, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-              Remaining Amount
+              Balance Due
             </Typography>
             <Typography variant="h3" sx={{ fontWeight: 700, color: INDIGO, fontSize: { xs: '32px', sm: '36px' } }}>
-              ₹{fullAmount.toLocaleString('en-IN')}
+              ₹{balanceDue.toLocaleString('en-IN')}
             </Typography>
           </Box>
 
-          {/* Payment Options */}
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mb: 3 }}>
-            {/* Full Payment Option */}
-            <Box
-              onClick={() => setSelectedOption('full')}
+          {/* Custom Amount Input */}
+          <Box sx={{ mb: 3 }}>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5, fontWeight: 600 }}>
+              Amount to Pay
+            </Typography>
+            <TextField
+              fullWidth
+              value={customAmount}
+              onChange={handleAmountChange}
+              onKeyPress={handleKeyPress}
+              placeholder="Enter amount"
+              error={!!error}
+              helperText={error || `Maximum: ₹${balanceDue.toLocaleString('en-IN')}`}
+              InputProps={{
+                startAdornment: (
+                  <Typography sx={{ mr: 1, color: 'text.secondary', fontWeight: 600 }}>
+                    ₹
+                  </Typography>
+                ),
+              }}
               sx={{
-                p: 2.5, borderRadius: 2,
-                border: `2px solid ${selectedOption === 'full' ? INDIGO : theme.palette.divider}`,
-                backgroundColor: selectedOption === 'full' ? 'rgba(79,70,229,0.05)' : 'background.paper',
-                cursor: 'pointer',
-                transition: 'all 0.2s',
-                '&:hover': { 
-                  borderColor: INDIGO,
-                  backgroundColor: 'rgba(79,70,229,0.03)',
+                '& .MuiOutlinedInput-root': {
+                  fontSize: '20px',
+                  fontWeight: 600,
+                  '&:hover fieldset': {
+                    borderColor: INDIGO,
+                  },
+                  '&.Mui-focused fieldset': {
+                    borderColor: INDIGO,
+                  },
+                },
+                '& .MuiFormHelperText-root': {
+                  fontSize: '12px',
+                  mt: 1,
                 },
               }}
-            >
-              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <Box sx={{ flex: 1 }}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 0.5 }}>
-                    <Radio
-                      checked={selectedOption === 'full'}
-                      value="full"
-                      sx={{
-                        p: 0,
-                        color: theme.palette.divider,
-                        '&.Mui-checked': { color: INDIGO },
-                      }}
-                    />
-                    <Typography variant="body1" sx={{ fontWeight: 600, color: 'text.primary' }}>
-                      Pay Full / Remaining Amount
-                    </Typography>
-                  </Box>
-                  <Typography variant="h5" sx={{ fontWeight: 700, color: INDIGO, ml: 4 }}>
-                    ₹{fullAmount.toLocaleString('en-IN')}
-                  </Typography>
-                </Box>
-              </Box>
-            </Box>
-
-            {/* 50% Payment Option */}
-            {allow50Percent && (
-              <Box
-                onClick={() => setSelectedOption('half')}
-                sx={{
-                  p: 2.5, borderRadius: 2,
-                  border: `2px solid ${selectedOption === 'half' ? INDIGO : theme.palette.divider}`,
-                  backgroundColor: selectedOption === 'half' ? 'rgba(79,70,229,0.05)' : 'background.paper',
-                  cursor: 'pointer',
-                  transition: 'all 0.2s',
-                  '&:hover': { 
-                    borderColor: INDIGO,
-                    backgroundColor: 'rgba(79,70,229,0.03)',
-                  },
-                }}
-              >
-                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <Box sx={{ flex: 1 }}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 0.5 }}>
-                      <Radio
-                        checked={selectedOption === 'half'}
-                        value="half"
-                        sx={{
-                          p: 0,
-                          color: theme.palette.divider,
-                          '&.Mui-checked': { color: INDIGO },
-                        }}
-                      />
-                      <Typography variant="body1" sx={{ fontWeight: 600, color: 'text.primary' }}>
-                        Pay 50%
-                      </Typography>
-                    </Box>
-                    <Typography variant="h5" sx={{ fontWeight: 700, color: INDIGO, ml: 4 }}>
-                      ₹{halfAmount.toLocaleString('en-IN')}
-                    </Typography>
-                  </Box>
-                </Box>
-              </Box>
-            )}
+              autoFocus
+            />
           </Box>
 
-          {/* Payment Summary */}
-          <Divider sx={{ my: 3 }} />
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <Typography variant="body1" sx={{ fontWeight: 600, color: 'text.secondary' }}>
-                Amount to Pay
-              </Typography>
-              <Typography variant="h6" sx={{ fontWeight: 700, color: INDIGO }}>
-                ₹{amountToPay.toLocaleString('en-IN')}
-              </Typography>
-            </Box>
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <Typography variant="body1" sx={{ fontWeight: 600, color: 'text.secondary' }}>
-                Remaining After Payment
-              </Typography>
-              <Typography variant="h6" sx={{ fontWeight: 700, color: remainingAfterPayment === 0 ? '#16A34A' : '#F59E0B' }}>
-                ₹{remainingAfterPayment.toLocaleString('en-IN')}
-              </Typography>
+          {/* Quick Amount Suggestions */}
+          <Box sx={{ mb: 2 }}>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5, fontWeight: 600 }}>
+              Quick Select
+            </Typography>
+            <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap' }}>
+              {[
+                Math.round(balanceDue * 0.25),
+                Math.round(balanceDue * 0.5),
+                Math.round(balanceDue * 0.75),
+                balanceDue
+              ].map((amount, idx) => (
+                <Button
+                  key={idx}
+                  variant="outlined"
+                  onClick={() => {
+                    setCustomAmount(amount.toString());
+                    setError('');
+                  }}
+                  sx={{
+                    borderColor: theme.palette.divider,
+                    color: 'text.primary',
+                    '&:hover': {
+                      borderColor: INDIGO,
+                      backgroundColor: 'rgba(79,70,229,0.05)',
+                    },
+                    fontSize: '13px',
+                    py: 0.75,
+                    px: 2,
+                  }}
+                >
+                  ₹{amount.toLocaleString('en-IN')}
+                </Button>
+              ))}
             </Box>
           </Box>
         </Box>
@@ -830,82 +832,147 @@ function PaymentHistorySection({ history, onViewReceipt }) {
   );
 }
 
-// ─── Receipt Details Drawer ────────────────────────────────────────────────────
+// ─── Receipt Details Modal ─────────────────────────────────────────────────────
 function ReceiptDetailsDrawer({ open, onClose, receipt, studentData }) {
   const theme = useTheme();
   if (!receipt) return null;
 
   return (
-    <Drawer
-      anchor="right"
+    <Modal
       open={open}
       onClose={onClose}
-      sx={{
-        '& .MuiDrawer-paper': {
-          width: { xs: '100%', sm: '500px' },
-          maxWidth: '100%',
-          boxSizing: 'border-box',
-          backgroundColor: 'background.paper',
+      closeAfterTransition
+      disablePortal={false}
+      disableScrollLock={false}
+      keepMounted={false}
+      container={() => document.body}
+      slots={{ backdrop: Backdrop }}
+      slotProps={{
+        backdrop: {
+          timeout: 500,
+          sx: {
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            width: '100vw',
+            height: '100vh',
+            backgroundColor: 'rgba(0, 0, 0, 0.75)',
+            backdropFilter: 'blur(8px)',
+            WebkitBackdropFilter: 'blur(8px)',
+            zIndex: 1400,
+          },
         },
       }}
+      sx={{
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        zIndex: 1400,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}
     >
-      <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      <Box sx={{
+        position: 'relative',
+        width: { xs: '90%', sm: '520px', md: '580px' },
+        maxWidth: '95vw',
+        maxHeight: '90vh',
+        overflowY: 'auto',
+        backgroundColor: 'background.paper',
+        borderRadius: '16px',
+        boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
+        outline: 'none',
+        zIndex: 1401,
+        '&::-webkit-scrollbar': {
+          width: '6px',
+        },
+        '&::-webkit-scrollbar-track': {
+          backgroundColor: 'transparent',
+          borderRadius: '10px',
+        },
+        '&::-webkit-scrollbar-thumb': {
+          backgroundColor: theme.palette.mode === 'light' ? 'rgba(0, 0, 0, 0.2)' : 'rgba(255, 255, 255, 0.2)',
+          borderRadius: '10px',
+          '&:hover': {
+            backgroundColor: theme.palette.mode === 'light' ? 'rgba(0, 0, 0, 0.3)' : 'rgba(255, 255, 255, 0.3)',
+          },
+        },
+        scrollbarWidth: 'thin',
+        scrollbarColor: theme.palette.mode === 'light' 
+          ? 'rgba(0, 0, 0, 0.2) transparent' 
+          : 'rgba(255, 255, 255, 0.2) transparent',
+      }}>
         {/* Header */}
         <Box sx={{
           p: 3,
+          pb: 2,
           borderBottom: `1px solid ${theme.palette.divider}`,
           display: 'flex',
           justifyContent: 'space-between',
-          alignItems: 'center',
+          alignItems: 'flex-start',
         }}>
           <Box>
-            <Typography variant="h5" sx={{ fontWeight: 700 }}>
+            <Typography variant="h5" sx={{ fontWeight: 700, mb: 0.5 }}>
               Payment Receipt
             </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+            <Typography variant="body2" color="text.secondary">
               {receipt.receiptNo}
             </Typography>
           </Box>
-          <IconButton onClick={onClose}>
+          <IconButton onClick={onClose} size="small" sx={{ mt: -0.5 }}>
             <X size={20} />
           </IconButton>
         </Box>
 
         {/* Content */}
-        <Box sx={{ flex: 1, overflowY: 'auto', p: 3 }}>
-          {/* Receipt Card */}
+        <Box sx={{ p: 3 }}>
+          {/* Success Icon */}
+          <Box sx={{ textAlign: 'center', mb: 3 }}>
+            <CheckCircle2 size={64} color="#16A34A" style={{ marginBottom: 16 }} />
+            <Typography variant="h6" sx={{ fontWeight: 700, color: '#16A34A', mb: 0.5 }}>
+              Payment Successful
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              Thank you for your payment
+            </Typography>
+          </Box>
+
+          {/* Receipt Details */}
           <Box sx={{
             p: 3, borderRadius: 2, mb: 3,
-            backgroundColor: 'background.default',
-            border: `1px solid ${theme.palette.divider}`,
+            backgroundColor: 'rgba(79,70,229,0.05)',
+            border: `1px solid rgba(79,70,229,0.15)`,
           }}>
-            <Box sx={{ textAlign: 'center', mb: 3, pb: 3, borderBottom: `1px solid ${theme.palette.divider}` }}>
-              <CheckCircle2 size={48} color="#16A34A" style={{ marginBottom: 12 }} />
-              <Typography variant="h6" sx={{ fontWeight: 700, color: '#16A34A', mb: 1 }}>
-                Payment Successful
-              </Typography>
-              <Typography variant="body2" color="text.secondary">
-                Thank you for your payment
-              </Typography>
-            </Box>
-
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
               {[
                 { label: 'Receipt Number', value: receipt.receiptNo },
                 { label: 'Student Name', value: studentData.studentName },
                 { label: 'Registration Number', value: studentData.registrationNo },
                 { label: 'Fee Type', value: studentData.feeType },
-                { label: 'Amount Paid', value: `₹${receipt.amount.toLocaleString('en-IN')}` },
+                { label: 'Amount Paid', value: `₹${receipt.amount.toLocaleString('en-IN')}`, highlight: true },
                 { label: 'Payment Date', value: receipt.date },
                 { label: 'Payment Method', value: receipt.paymentMode },
                 { label: 'Transaction ID', value: receipt.transactionId },
-                { label: 'Payment Status', value: receipt.status },
-              ].map(({ label, value }) => (
+                { label: 'Payment Status', value: receipt.status, success: true },
+              ].map(({ label, value, highlight, success }) => (
                 <Box key={label} sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
                     {label}
                   </Typography>
-                  <Typography variant="body1" sx={{ fontWeight: 600, color: 'text.primary', textAlign: 'right' }}>
+                  <Typography 
+                    variant="body1" 
+                    sx={{ 
+                      fontWeight: 600, 
+                      color: highlight ? INDIGO : success ? '#16A34A' : 'text.primary',
+                      textAlign: 'right',
+                      fontSize: highlight ? '1.1rem' : '0.875rem',
+                    }}
+                  >
                     {value}
                   </Typography>
                 </Box>
@@ -913,43 +980,49 @@ function ReceiptDetailsDrawer({ open, onClose, receipt, studentData }) {
             </Box>
           </Box>
 
+          {/* Footer Note */}
           <Box sx={{
-            p: 2.5, borderRadius: 2,
-            backgroundColor: 'rgba(79,70,229,0.05)',
-            border: `1px solid rgba(79,70,229,0.2)`,
+            p: 2, borderRadius: 2,
+            backgroundColor: theme.palette.mode === 'light' ? '#F9FAFB' : 'rgba(255,255,255,0.05)',
             textAlign: 'center',
           }}>
-            <Typography variant="caption" color="text.secondary">
+            <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.75rem' }}>
               This is a computer-generated receipt and does not require a signature.
             </Typography>
           </Box>
         </Box>
 
-        {/* Footer */}
+        {/* Footer Button */}
         <Box sx={{
           p: 3,
+          pt: 2,
           borderTop: `1px solid ${theme.palette.divider}`,
-          display: 'flex',
-          gap: 2,
         }}>
           <Button
-            variant="outlined"
+            variant="contained"
             fullWidth
             onClick={onClose}
             sx={{
               py: 1.5,
-              borderColor: theme.palette.divider,
-              color: 'text.secondary',
-              '&:hover': { borderColor: 'text.primary' },
+              backgroundColor: INDIGO,
+              '&:hover': { backgroundColor: INDIGO_HOVER },
+              fontWeight: 600,
             }}
           >
             Close
           </Button>
         </Box>
       </Box>
-    </Drawer>
+    </Modal>
   );
 }
+
+// ─── Safe numeric conversion helper ────────────────────────────────────────────
+// Converts Sequelize DECIMAL strings to numbers to prevent string concatenation bugs
+const toAmount = (value) => {
+  const amount = Number(value);
+  return Number.isFinite(amount) ? amount : 0;
+};
 
 // ─── Main Page ─────────────────────────────────────────────────────────────────
 export default function StudentFinancePage() {
@@ -987,36 +1060,40 @@ export default function StudentFinancePage() {
         const res = await studentsApi.getById(user.studentId);
         if (active) {
           const s = res.data;
+          
+          // Calculate finance data using Finance Service source of truth
+          const totalBillable = toAmount(s.totalBillable);
+          const successfulPayments = (s.payments || []).filter(p => p.status === 'Success');
+          const totalPaid = successfulPayments.reduce((sum, p) => sum + toAmount(p.amount), 0);
+          const balanceDue = Math.max(0, totalBillable - totalPaid);
+          
+          let paymentStatus = 'Pending';
+          if (totalPaid === 0) {
+            paymentStatus = 'Pending';
+          } else if (balanceDue === 0) {
+            paymentStatus = 'Paid';
+          } else {
+            paymentStatus = 'Partial';
+          }
+          
           setStudentData({
             studentName: `${s.firstName} ${s.lastName}`,
             registrationNo: s.registrationNumber,
             academicYear: '2026-27',
             feeType: 'Hostel Fee',
-            totalFee: s.totalFees || 0,
-            paid: s.initialDeposit || 0,
-            pending: Math.max(0, (s.totalFees || 0) - (s.initialDeposit || 0)),
+            totalFee: totalBillable,
+            paid: totalPaid,
+            pending: balanceDue,
             dueDate: '30 Sep 2026',
-            status: s.paymentStatus || 'Pending',
-            paymentHistory: s.payments && s.payments.length > 0
-              ? s.payments.map(p => ({
-                  receiptNo: p.receiptNo,
-                  date: new Date(p.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
-                  amount: p.amount,
-                  paymentMode: p.paymentMode,
-                  status: p.status,
-                  transactionId: p.transactionId || '—',
-                }))
-              : (s.initialDeposit > 0
-                  ? [{
-                      receiptNo: 'REC_INIT',
-                      date: new Date(s.createdAt || Date.now()).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
-                      amount: s.initialDeposit,
-                      paymentMode: 'Deposit',
-                      status: 'Success',
-                      transactionId: 'INIT_DEP',
-                    }]
-                  : []
-                ),
+            status: paymentStatus,
+            paymentHistory: successfulPayments.map(p => ({
+              receiptNo: p.receiptNo,
+              date: new Date(p.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
+              amount: p.amount,
+              paymentMode: p.paymentMode,
+              status: p.status,
+              transactionId: p.transactionId || '—',
+            })),
           });
         }
       } catch (err) {
@@ -1056,7 +1133,7 @@ export default function StudentFinancePage() {
         handler: async function (response) {
           setLoading(true);
           try {
-            await studentsApi.verifyPayment(user.studentId, {
+            const verifyRes = await studentsApi.verifyPayment(user.studentId, {
               razorpay_payment_id: response.razorpay_payment_id,
               razorpay_order_id: response.razorpay_order_id,
               razorpay_signature: response.razorpay_signature,
@@ -1065,39 +1142,46 @@ export default function StudentFinancePage() {
 
             const updatedRes = await studentsApi.getById(user.studentId);
             const s = updatedRes.data;
+            
+            // Calculate finance data using Finance Service source of truth
+            const totalBillable = toAmount(s.totalBillable);
+            const successfulPayments = (s.payments || []).filter(p => p.status === 'Success');
+            const totalPaid = successfulPayments.reduce((sum, p) => sum + toAmount(p.amount), 0);
+            const balanceDue = Math.max(0, totalBillable - totalPaid);
+            
+            let paymentStatus = 'Pending';
+            if (totalPaid === 0) {
+              paymentStatus = 'Pending';
+            } else if (balanceDue === 0) {
+              paymentStatus = 'Paid';
+            } else {
+              paymentStatus = 'Partial';
+            }
+            
             setStudentData({
               studentName: `${s.firstName} ${s.lastName}`,
               registrationNo: s.registrationNumber,
               academicYear: '2026-27',
               feeType: 'Hostel Fee',
-              totalFee: s.totalFees || 0,
-              paid: s.initialDeposit || 0,
-              pending: Math.max(0, (s.totalFees || 0) - (s.initialDeposit || 0)),
+              totalFee: totalBillable,
+              paid: totalPaid,
+              pending: balanceDue,
               dueDate: '30 Sep 2026',
-              status: s.paymentStatus || 'Pending',
-              paymentHistory: s.payments && s.payments.length > 0
-                ? s.payments.map(p => ({
-                    receiptNo: p.receiptNo,
-                    date: new Date(p.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
-                    amount: p.amount,
-                    paymentMode: p.paymentMode,
-                    status: p.status,
-                    transactionId: p.transactionId || '—',
-                  }))
-                : (s.initialDeposit > 0
-                    ? [{
-                        receiptNo: 'REC_INIT',
-                        date: new Date(s.createdAt || Date.now()).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
-                        amount: s.initialDeposit,
-                        paymentMode: 'Deposit',
-                        status: 'Success',
-                        transactionId: 'INIT_DEP',
-                      }]
-                    : []
-                  ),
+              status: paymentStatus,
+              paymentHistory: successfulPayments.map(p => ({
+                receiptNo: p.receiptNo,
+                date: new Date(p.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
+                amount: p.amount,
+                paymentMode: p.paymentMode,
+                status: p.status,
+                transactionId: p.transactionId || '—',
+              })),
             });
 
-            alert('Payment successful and verified!');
+            const message = verifyRes.data?.alreadyProcessed 
+              ? 'Payment was already processed successfully!' 
+              : 'Payment successful and verified!';
+            alert(message);
           } catch (err) {
             console.error('Payment verification failed:', err);
             alert('Payment succeeded but verification failed: ' + err.message);

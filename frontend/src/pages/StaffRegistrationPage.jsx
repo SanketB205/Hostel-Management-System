@@ -16,6 +16,10 @@ import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
 import { useRoomContext } from '../contexts/RoomContext';
 import { useAuth } from '../contexts/AuthContext';
 import { staff as staffApi } from '../api';
+import EmploymentManagementModal from '../components/staff/EmploymentManagementModal';
+import AssignmentManagementModal from '../components/staff/AssignmentManagementModal';
+import { useEmploymentData } from '../hooks/useEmploymentData';
+import { useAssignmentData } from '../hooks/useAssignmentData';
 import dayjs from 'dayjs';
 
 // Styled components (matching AddStudentDrawer.jsx / ViewStudentDetailsPage.jsx)
@@ -140,6 +144,14 @@ export default function StaffRegistrationPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
+  const [empModalOpen, setEmpModalOpen] = useState(false);
+  const [assignmentModalOpen, setAssignmentModalOpen] = useState(false);
+  
+  // Get employment data from custom hook
+  const { activeDesignations, activeEmploymentTypes } = useEmploymentData();
+  
+  // Get assignment data from custom hook
+  const { activeAssignedAreas, activeShifts } = useAssignmentData();
   const { blocks: mockBlocks } = useRoomContext();
 
   const { control, handleSubmit, reset, watch, setValue, formState: { errors } } = useForm({
@@ -376,24 +388,62 @@ export default function StaffRegistrationPage() {
           <SectionCard>
             <CardContent sx={{ p: { xs: 2, sm: 4 } }}>
               <SectionHeaderBox>
-                <IconWrapper><Briefcase size={24} /></IconWrapper>
-                <Typography variant="h6" sx={{ fontWeight: 700 }}>Employment Information</Typography>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flex: 1 }}>
+                  <IconWrapper><Briefcase size={24} /></IconWrapper>
+                  <Typography variant="h6" sx={{ fontWeight: 700 }}>Employment Information</Typography>
+                </Box>
+                {user?.role === 'admin' && (
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    onClick={() => setEmpModalOpen(true)}
+                    sx={{
+                      textTransform: 'none',
+                      borderRadius: '8px',
+                      borderColor: '#4F46E5',
+                      color: '#4F46E5',
+                      fontWeight: 600,
+                      fontSize: '0.8125rem',
+                      px: 2,
+                      '&:hover': {
+                        backgroundColor: 'rgba(79, 70, 229, 0.04)',
+                        borderColor: '#4338CA',
+                      },
+                    }}
+                  >
+                    Manage Employment Info
+                  </Button>
+                )}
               </SectionHeaderBox>
               <GridBox sx={{ gap: 3 }}>
                 <Controller name="staffId" control={control} render={({ field }) => (
-                  <TextField {...field} slotProps={{ input: { readOnly: true } }} fullWidth label="Staff ID *" error={!!errors.staffId} helperText={errors.staffId?.message} />
+                  <TextField 
+                    {...field} 
+                    fullWidth 
+                    label="Staff ID *" 
+                    disabled
+                    slotProps={{ 
+                      input: { 
+                        readOnly: true 
+                      } 
+                    }} 
+                    error={!!errors.staffId} 
+                    helperText={errors.staffId?.message}
+                    sx={{
+                      '& .MuiInputBase-input.Mui-disabled': {
+                        WebkitTextFillColor: 'rgba(0, 0, 0, 0.6)',
+                        cursor: 'not-allowed',
+                      }
+                    }}
+                  />
                 )} />
                 <Controller name="designation" control={control} render={({ field }) => (
                   <TextField {...field} select fullWidth label="Designation *" error={!!errors.designation} helperText={errors.designation?.message}>
-                    {user?.role === 'admin' && (
-                      <MenuItem value="Warden / Rector">Warden / Rector</MenuItem>
-                    )}
-                    <MenuItem value="Security">Security</MenuItem>
-                    <MenuItem value="Maintenance">Maintenance</MenuItem>
-                    <MenuItem value="Cleaner">Cleaner</MenuItem>
-                    <MenuItem value="Mess Staff">Mess Staff</MenuItem>
-                    <MenuItem value="Accountant">Accountant</MenuItem>
-                    <MenuItem value="Other">Other</MenuItem>
+                    {activeDesignations.map((designation) => (
+                      <MenuItem key={designation.id} value={designation.name}>
+                        {designation.name}
+                      </MenuItem>
+                    ))}
                   </TextField>
                 )} />
                 <Controller name="joiningDate" control={control} render={({ field }) => (
@@ -402,9 +452,11 @@ export default function StaffRegistrationPage() {
                 )} />
                 <Controller name="employmentType" control={control} render={({ field }) => (
                   <TextField {...field} select fullWidth label="Employment Type *" error={!!errors.employmentType} helperText={errors.employmentType?.message}>
-                    <MenuItem value="Full Time">Full Time</MenuItem>
-                    <MenuItem value="Part Time">Part Time</MenuItem>
-                    <MenuItem value="Contract">Contract</MenuItem>
+                    {activeEmploymentTypes.map((type) => (
+                      <MenuItem key={type.id} value={type.name}>
+                        {type.name}
+                      </MenuItem>
+                    ))}
                   </TextField>
                 )} />
               </GridBox>
@@ -415,8 +467,32 @@ export default function StaffRegistrationPage() {
           <SectionCard>
             <CardContent sx={{ p: { xs: 2, sm: 4 } }}>
               <SectionHeaderBox>
-                <IconWrapper><Home size={24} /></IconWrapper>
-                <Typography variant="h6" sx={{ fontWeight: 700 }}>Hostel Assignment</Typography>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flex: 1 }}>
+                  <IconWrapper><Home size={24} /></IconWrapper>
+                  <Typography variant="h6" sx={{ fontWeight: 700 }}>Hostel Assignment</Typography>
+                </Box>
+                {user?.role === 'admin' && (
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    onClick={() => setAssignmentModalOpen(true)}
+                    sx={{
+                      textTransform: 'none',
+                      borderRadius: '8px',
+                      borderColor: '#4F46E5',
+                      color: '#4F46E5',
+                      fontWeight: 600,
+                      fontSize: '0.8125rem',
+                      px: 2,
+                      '&:hover': {
+                        backgroundColor: 'rgba(79, 70, 229, 0.04)',
+                        borderColor: '#4338CA',
+                      },
+                    }}
+                  >
+                    Manage Assignment
+                  </Button>
+                )}
               </SectionHeaderBox>
               <GridBox sx={{ gap: 3 }}>
                 <Controller name="assignedArea" control={control} render={({ field }) => (
@@ -434,12 +510,11 @@ export default function StaffRegistrationPage() {
                       }
                     }}
                   >
-                    <MenuItem value="Hostel Block">Hostel Block</MenuItem>
-                    <MenuItem value="Main Gate">Main Gate</MenuItem>
-                    <MenuItem value="Mess Area">Mess Area</MenuItem>
-                    <MenuItem value="Office">Office</MenuItem>
-                    <MenuItem value="Common Area">Common Area</MenuItem>
-                    <MenuItem value="Other">Other</MenuItem>
+                    {activeAssignedAreas.map((area) => (
+                      <MenuItem key={area.id} value={area.name}>
+                        {area.name}
+                      </MenuItem>
+                    ))}
                   </TextField>
                 )} />
 
@@ -455,10 +530,11 @@ export default function StaffRegistrationPage() {
 
                 <Controller name="shift" control={control} render={({ field }) => (
                   <TextField {...field} select fullWidth label="Shift *" error={!!errors.shift} helperText={errors.shift?.message}>
-                    <MenuItem value="Morning">Morning</MenuItem>
-                    <MenuItem value="Evening">Evening</MenuItem>
-                    <MenuItem value="Night">Night</MenuItem>
-                    <MenuItem value="General">General</MenuItem>
+                    {activeShifts.map((shift) => (
+                      <MenuItem key={shift.id} value={shift.name}>
+                        {shift.name}
+                      </MenuItem>
+                    ))}
                   </TextField>
                 )} />
               </GridBox>
@@ -705,6 +781,33 @@ export default function StaffRegistrationPage() {
           {snackbar.message}
         </Alert>
       </Snackbar>
+
+      {/* Employment Management Modal */}
+      <EmploymentManagementModal
+        open={empModalOpen}
+        onClose={() => setEmpModalOpen(false)}
+        onUpdated={() => {
+          // Optionally refresh data or show notification
+          setSnackbar({
+            open: true,
+            message: 'Employment information updated successfully',
+            severity: 'success'
+          });
+        }}
+      />
+
+      {/* Assignment Management Modal */}
+      <AssignmentManagementModal
+        open={assignmentModalOpen}
+        onClose={() => setAssignmentModalOpen(false)}
+        onUpdated={() => {
+          setSnackbar({
+            open: true,
+            message: 'Assignment information updated successfully',
+            severity: 'success'
+          });
+        }}
+      />
     </Box>
   );
 }

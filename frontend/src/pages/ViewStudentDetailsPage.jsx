@@ -8,7 +8,7 @@ import {
 } from '@mui/material';
 import {
   ArrowLeft, User, GraduationCap, Users,
-  Home, FileText, Edit, Printer, Download, KeyRound, Trash2
+  Home, FileText, Edit, Printer, Download, KeyRound, Trash2, CalendarCheck
 } from 'lucide-react';
 import { students as studentsApi } from '../api';
 import { useAuth } from '../contexts/AuthContext';
@@ -240,25 +240,44 @@ export default function ViewStudentDetailsPage() {
               </Typography>
             </Box>
           </Box>
-          {isAdmin && (
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
             <Button
-              variant="contained"
-              color="error"
-              startIcon={<Trash2 size={18} />}
-              onClick={() => setDeleteOpen(true)}
+              variant="outlined"
+              startIcon={<CalendarCheck size={18} />}
+              onClick={() => navigate(`/attendance/student/${id}`)}
               sx={{
-                backgroundColor: '#DC2626',
-                '&:hover': { backgroundColor: '#B91C1C' },
+                color: '#4F46E5',
+                borderColor: '#4F46E5',
                 borderRadius: '8px',
                 textTransform: 'none',
                 fontWeight: 600,
-                px: 3,
-                py: 1
+                px: 2.5,
+                py: 1,
+                '&:hover': { backgroundColor: 'rgba(79, 70, 229, 0.08)', borderColor: '#4F46E5' },
               }}
             >
-              Remove Student
+              View Attendance
             </Button>
-          )}
+            {isAdmin && (
+              <Button
+                variant="contained"
+                color="error"
+                startIcon={<Trash2 size={18} />}
+                onClick={() => setDeleteOpen(true)}
+                sx={{
+                  backgroundColor: '#DC2626',
+                  '&:hover': { backgroundColor: '#B91C1C' },
+                  borderRadius: '8px',
+                  textTransform: 'none',
+                  fontWeight: 600,
+                  px: 3,
+                  py: 1
+                }}
+              >
+                Remove Student
+              </Button>
+            )}
+          </Box>
         </Box>
 
         {/* ── SECTION 1: Personal Information ── */}
@@ -461,6 +480,24 @@ export default function ViewStudentDetailsPage() {
             sx={{ display: { xs: 'none', sm: 'flex' }, px: 3, py: 1, boxShadow: 'none', whiteSpace: 'nowrap' }}
           >
             Download PDF
+          </Button>
+          <Button
+            variant="outlined"
+            startIcon={<CalendarCheck size={18} />}
+            onClick={() => navigate(`/attendance/student/${id}`)}
+            sx={{
+              display: { xs: 'none', sm: 'flex' },
+              px: 3,
+              py: 1,
+              color: '#4F46E5',
+              borderColor: '#4F46E5',
+              fontWeight: 600,
+              textTransform: 'none',
+              '&:hover': { backgroundColor: 'rgba(79, 70, 229, 0.08)', borderColor: '#4F46E5' },
+              whiteSpace: 'nowrap',
+            }}
+          >
+            View Attendance
           </Button>
           {isAdmin && (
             <Button

@@ -10,6 +10,8 @@ import {
   Home, CreditCard, FileText, Edit, Printer, Download
 } from 'lucide-react';
 import { staff as staffApi } from '../api';
+import { useAuth } from '../contexts/AuthContext';
+import EmploymentManagementModal from '../components/staff/EmploymentManagementModal';
 
 // ── Styled helpers ─────────────────────────────────────────────────────────────
 
@@ -105,11 +107,13 @@ export default function ViewStaffDetailsPage() {
   const theme = useTheme();
   const navigate = useNavigate();
   const { id } = useParams();
+  const { user } = useAuth();
 
   const [staffMember, setStaffMember] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
+  const [empModalOpen, setEmpModalOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -195,8 +199,32 @@ export default function ViewStaffDetailsPage() {
         <SectionCard>
           <CardContent sx={{ p: { xs: 2, sm: 4 } }}>
             <SectionHeaderBox>
-              <IconWrapper><GraduationCap size={24} /></IconWrapper>
-              <Typography variant="h6" sx={{ fontWeight: 700 }}>Employment Information</Typography>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flex: 1 }}>
+                <IconWrapper><GraduationCap size={24} /></IconWrapper>
+                <Typography variant="h6" sx={{ fontWeight: 700 }}>Employment Information</Typography>
+              </Box>
+              {user?.role === 'admin' && (
+                <Button
+                  size="small"
+                  variant="outlined"
+                  onClick={() => setEmpModalOpen(true)}
+                  sx={{
+                    textTransform: 'none',
+                    borderRadius: '8px',
+                    borderColor: '#4F46E5',
+                    color: '#4F46E5',
+                    fontWeight: 600,
+                    fontSize: '0.8125rem',
+                    px: 2,
+                    '&:hover': {
+                      backgroundColor: 'rgba(79, 70, 229, 0.04)',
+                      borderColor: '#4338CA',
+                    },
+                  }}
+                >
+                  Manage Employment Info
+                </Button>
+              )}
             </SectionHeaderBox>
             <GridBox>
               <InfoField label="Designation" value={staffMember.designation} />
@@ -326,6 +354,19 @@ export default function ViewStaffDetailsPage() {
           {snackbar.message}
         </Alert>
       </Snackbar>
+
+      {/* Employment Management Modal */}
+      <EmploymentManagementModal
+        open={empModalOpen}
+        onClose={() => setEmpModalOpen(false)}
+        onUpdated={() => {
+          setSnackbar({
+            open: true,
+            message: 'Employment information updated successfully',
+            severity: 'success'
+          });
+        }}
+      />
     </Box>
   );
 }

@@ -4,6 +4,7 @@ import { sequelize } from '../config/database.js';
 import { BedAllocation, Room, Student, User, StudentAttendance, Floor, HostelBlock, Payment, Department, Course, RegistrationSequence } from '../models/index.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { env } from '../config/env.js';
+import { getStudentFinancialSummary } from '../services/finance.service.js';
 
 const VALID_YEARS = ['1st Year', '2nd Year', '3rd Year', '4th Year', '5th Year'];
 
@@ -27,6 +28,10 @@ export const getLocalDateString = (d = new Date()) => {
 // ── List all students ─────────────────────────────────────────────────────────
 
 export const listStudents = asyncHandler(async (req, res) => {
+  if (req.user?.role === 'student') {
+    return res.status(403).json({ message: 'Access denied.' });
+  }
+
   const students = await Student.findAll({
     include: [
       {
@@ -40,7 +45,18 @@ export const listStudents = asyncHandler(async (req, res) => {
         as: 'allocations',
         where: { status: 'active' },
         required: false,
-        include: [{ model: Room, as: 'room' }],
+        include: [{
+          model: Room,
+          as: 'room',
+          include: [{
+            model: Floor,
+            as: 'floor',
+            include: [{
+              model: HostelBlock,
+              as: 'block'
+            }]
+          }]
+        }],
       },
       { model: Department, as: 'departmentDetails', required: false },
       { model: Course, as: 'courseDetails', required: false },
@@ -71,6 +87,15 @@ export const listStudents = asyncHandler(async (req, res) => {
 // ── Get single student ────────────────────────────────────────────────────────
 
 export const getStudent = asyncHandler(async (req, res) => {
+  if (req.user?.role === 'student') {
+    const ownStudent = await Student.findOne({ where: { userId: req.user.id } });
+    if (!ownStudent || ownStudent.id !== req.params.id) {
+      return res.status(403).json({ message: 'Access denied.' });
+    }
+  } else if (req.user?.role !== 'admin' && req.user?.role !== 'rector') {
+    return res.status(403).json({ message: 'Access denied.' });
+  }
+
   const student = await Student.findByPk(req.params.id, {
     include: [
       {
@@ -94,6 +119,11 @@ export const getStudent = asyncHandler(async (req, res) => {
       {
         model: Payment,
         as: 'payments',
+        required: false,
+      },
+      {
+        model: StudentAttendance,
+        as: 'attendances',
         required: false,
       },
       { model: Department, as: 'departmentDetails', required: false },
@@ -248,13 +278,26 @@ export const createStudent = asyncHandler(async (req, res) => {
   // Validate payments if provided
   const payments = req.body.payments || [];
   if (payments.length > 0) {
+    const billableAmount = parseFloat(totalBillable || 0);
+    let totalPaymentAmount = 0;
+
     for (const payment of payments) {
+      // Validate payment has required fields
       if (!payment.amount || parseFloat(payment.amount) <= 0) {
         return res.status(400).json({ message: 'Each payment must have a valid positive amount.' });
       }
       if (!payment.paymentMode) {
         return res.status(400).json({ message: 'Each payment must have a payment mode.' });
       }
+
+      totalPaymentAmount += parseFloat(payment.amount);
+    }
+
+    // Validate total initial payments don't exceed totalBillable
+    if (totalPaymentAmount > billableAmount) {
+      return res.status(400).json({ 
+        message: `Total initial payment amount ₹${totalPaymentAmount.toLocaleString('en-IN')} exceeds total billable amount ₹${billableAmount.toLocaleString('en-IN')}.` 
+      });
     }
   }
 
@@ -864,7 +907,7 @@ export const updateStudent = asyncHandler(async (req, res) => {
   const student = await Student.findByPk(req.params.id);
   if (!student) return res.status(404).json({ message: 'Student not found.' });
 
-  const { registrationNumber, email } = req.body;
+  const { registrationNumber, email, totalBillable } = req.body;
 
   if (email && email.trim().toLowerCase() !== student.email) {
     const existingEmail = await Student.findOne({
@@ -881,6 +924,32 @@ export const updateStudent = asyncHandler(async (req, res) => {
     });
     if (existingReg) {
       return res.status(400).json({ message: 'Registration number is already in use.' });
+    }
+  }
+
+  // Validate totalBillable if it's being changed
+  if (totalBillable !== undefined && totalBillable !== null && totalBillable !== '') {
+    const newBillable = parseFloat(totalBillable);
+    
+    // Validate it's a valid number
+    if (isNaN(newBillable)) {
+      return res.status(400).json({ message: 'Total billable must be a valid number.' });
+    }
+    
+    // Validate it's not negative
+    if (newBillable < 0) {
+      return res.status(400).json({ message: 'Total billable cannot be negative.' });
+    }
+
+    // Get current financial summary from Finance Service
+    const financialSummary = await getStudentFinancialSummary(student.id);
+    const currentTotalPaid = financialSummary.totalPaid;
+
+    // Validate new billable is not less than amount already paid
+    if (newBillable < currentTotalPaid) {
+      return res.status(400).json({ 
+        message: `Total Billable (₹${newBillable.toLocaleString('en-IN')}) cannot be less than the amount already paid (₹${currentTotalPaid.toLocaleString('en-IN')}).` 
+      });
     }
   }
 
@@ -970,10 +1039,44 @@ export const createPaymentOrder = asyncHandler(async (req, res) => {
   const student = await Student.findByPk(req.params.id);
   if (!student) return res.status(404).json({ message: 'Student not found.' });
 
+  // Get current financial summary from Finance Service
+  const summary = await getStudentFinancialSummary(req.params.id);
+  
+  // Reject if no balance due
+  if (summary.balanceDue <= 0) {
+    return res.status(400).json({ 
+      message: 'No outstanding balance. All fees have been paid.',
+      summary 
+    });
+  }
+
   const { amount } = req.body;
-  if (!amount || Number(amount) <= 0) {
+  
+  // Validate amount is provided and is a valid number
+  if (!amount || isNaN(Number(amount))) {
     return res.status(400).json({ message: 'Valid amount is required.' });
   }
+
+  const requestedAmount = Number(amount);
+
+  // Validate amount > 0
+  if (requestedAmount <= 0) {
+    return res.status(400).json({ 
+      message: 'Payment amount must be greater than zero.',
+      balanceDue: summary.balanceDue
+    });
+  }
+
+  // Validate amount <= balanceDue
+  if (requestedAmount > summary.balanceDue) {
+    return res.status(400).json({ 
+      message: `Payment amount (₹${requestedAmount}) cannot exceed balance due (₹${summary.balanceDue}).`,
+      balanceDue: summary.balanceDue
+    });
+  }
+
+  // Use the requested amount directly (no Full/50% calculation)
+  const paymentAmount = requestedAmount;
 
   const authHeader = 'Basic ' + Buffer.from(`${env.razorpay.key}:${env.razorpay.secret}`).toString('base64');
   try {
@@ -984,7 +1087,7 @@ export const createPaymentOrder = asyncHandler(async (req, res) => {
         'Authorization': authHeader,
       },
       body: JSON.stringify({
-        amount: Math.round(Number(amount) * 100), // convert to paisa
+        amount: Math.round(paymentAmount * 100), // convert to paisa
         currency: 'INR',
         receipt: `rcpt_${student.id.slice(0, 8)}_${Date.now()}`,
       }),
@@ -1012,57 +1115,148 @@ export const verifyPayment = asyncHandler(async (req, res) => {
   if (!student) return res.status(404).json({ message: 'Student not found.' });
 
   const { razorpay_payment_id, razorpay_order_id, razorpay_signature, amount } = req.body;
+  
+  // 1. Validate required Razorpay fields
   if (!razorpay_payment_id || !razorpay_order_id || !razorpay_signature) {
     return res.status(400).json({ message: 'Razorpay payment ID, order ID, and signature are required.' });
   }
 
+  // 2. Verify Razorpay signature
   const crypto = await import('crypto');
   const shasum = crypto.createHmac('sha256', env.razorpay.secret);
   shasum.update(`${razorpay_order_id}|${razorpay_payment_id}`);
   const digest = shasum.digest('hex');
 
   if (digest !== razorpay_signature) {
-    return res.status(400).json({ message: 'Payment verification failed: Signature mismatch.' });
+    return res.status(400).json({ message: 'Payment verification failed: Invalid signature.' });
   }
 
-  const result = await sequelize.transaction(async (transaction) => {
-    const paidAmount = Number(amount);
-    const currentDeposit = student.initialDeposit || 0;
-    const newDeposit = currentDeposit + paidAmount;
+  // 3. Check for duplicate payment (prevent same payment_id from being recorded twice)
+  const existingPayment = await Payment.findOne({
+    where: {
+      transactionId: razorpay_payment_id,
+      status: 'Success'
+    }
+  });
 
-    let status = 'Pending';
-    if (newDeposit >= (student.totalFees || 0)) {
-      status = 'Paid';
-    } else if (newDeposit > 0) {
-      status = 'Partial';
+  if (existingPayment) {
+    // Payment already processed - return success but don't create duplicate
+    const summary = await getStudentFinancialSummary(req.params.id);
+    return res.status(200).json({ 
+      message: 'Payment already processed successfully.',
+      alreadyProcessed: true,
+      data: {
+        payment: existingPayment,
+        financialSummary: summary
+      }
+    });
+  }
+
+  // 4. Fetch Razorpay payment details to verify payment-to-order relationship
+  const authHeader = 'Basic ' + Buffer.from(`${env.razorpay.key}:${env.razorpay.secret}`).toString('base64');
+  let razorpayPayment;
+  
+  try {
+    const paymentResponse = await fetch(`https://api.razorpay.com/v1/payments/${razorpay_payment_id}`, {
+      method: 'GET',
+      headers: {
+        'Authorization': authHeader,
+      },
+    });
+
+    if (!paymentResponse.ok) {
+      throw new Error('Failed to fetch Razorpay payment details');
     }
 
-    await student.update({
-      initialDeposit: newDeposit,
-      paymentStatus: status,
-    }, { transaction });
+    razorpayPayment = await paymentResponse.json();
+  } catch (error) {
+    console.error('Razorpay payment fetch error:', error);
+    return res.status(500).json({ message: 'Failed to verify payment details with Razorpay.' });
+  }
 
+  // 5. Verify payment belongs to the order
+  if (razorpayPayment.order_id !== razorpay_order_id) {
+    return res.status(400).json({ 
+      message: 'Payment does not belong to the specified order. Verification failed.',
+    });
+  }
+
+  // 6. Verify payment status is captured
+  if (razorpayPayment.status !== 'captured') {
+    return res.status(400).json({ 
+      message: `Payment status is '${razorpayPayment.status}'. Only captured payments are allowed.`,
+    });
+  }
+
+  // 7. Verify payment amount (Razorpay stores amount in paise, convert to rupees)
+  const razorpayAmountInRupees = razorpayPayment.amount / 100;
+  const requestedAmount = Number(amount);
+
+  if (Math.abs(razorpayAmountInRupees - requestedAmount) > 0.01) {
+    return res.status(400).json({ 
+      message: 'Payment amount mismatch. Payment verification failed.',
+    });
+  }
+
+  // 8. Get current balance due from Finance Service
+  const summary = await getStudentFinancialSummary(req.params.id);
+
+  // 9. Validate payment amount against balance due
+  if (requestedAmount <= 0) {
+    return res.status(400).json({ 
+      message: 'Invalid payment amount.',
+      balanceDue: summary.balanceDue
+    });
+  }
+
+  if (summary.balanceDue <= 0) {
+    return res.status(400).json({ 
+      message: 'No outstanding balance. All fees have been paid.',
+      financialSummary: summary
+    });
+  }
+
+  if (requestedAmount > summary.balanceDue) {
+    return res.status(400).json({ 
+      message: `Payment amount (₹${requestedAmount}) exceeds balance due (₹${summary.balanceDue}).`,
+      balanceDue: summary.balanceDue
+    });
+  }
+
+  // 10. Create Payment record in transaction
+  const result = await sequelize.transaction(async (transaction) => {
     const receiptNo = `REC${String(Date.now()).slice(-6)}`;
+    
     const payment = await Payment.create({
       studentId: student.id,
       receiptNo,
-      amount: paidAmount,
+      amount: requestedAmount,
       paymentMode: 'Razorpay',
       status: 'Success',
       transactionId: razorpay_payment_id,
+      paymentDate: new Date(),
     }, { transaction });
 
-    return { student, payment };
+    return { payment };
   });
 
-  res.json({ message: 'Payment verified and recorded successfully.', data: result });
+  // 11. Get updated financial summary after payment
+  const updatedSummary = await getStudentFinancialSummary(req.params.id);
+
+  res.json({ 
+    message: 'Payment verified and recorded successfully.', 
+    data: {
+      payment: result.payment,
+      financialSummary: updatedSummary
+    }
+  });
 });
 
 export const getFinanceAnalytics = asyncHandler(async (req, res) => {
   const targetDateStr = req.query.date || new Date().toISOString().slice(0, 10);
   const targetYear = new Date(targetDateStr).getFullYear() || new Date().getFullYear();
 
-  // 1. Fetch all students with active allocations and payments
+  // 1. Fetch all students with active allocations and payments (bulk query - no N+1)
   const students = await Student.findAll({
     include: [
       {
@@ -1097,13 +1291,13 @@ export const getFinanceAnalytics = asyncHandler(async (req, res) => {
     ]
   });
 
-  // Fetch all successful payments
+  // Fetch all successful payments for monthly collection tracking
   const allPayments = await Payment.findAll({
     where: { status: 'Success' },
     order: [['createdAt', 'ASC']]
   });
 
-  // 2. Compute KPI summary stats
+  // 2. Compute KPI summary stats using Finance Service logic
   let totalRevenue = 0;
   let totalCollected = 0;
   let totalPending = 0;
@@ -1124,43 +1318,59 @@ export const getFinanceAnalytics = asyncHandler(async (req, res) => {
   const pendingStudentsList = [];
 
   students.forEach((s) => {
-    const totalFee = Number(s.totalFees) || 0;
-    const initialDep = Number(s.initialDeposit) || 0;
+    // Use Finance Service logic: totalBillable + successful Payment records
+    const totalBillable = parseFloat(s.totalBillable || 0);
+    
+    // Calculate totalPaid from successful payments only (Finance Service logic)
+    const successfulPayments = (s.payments || []).filter(
+      payment => payment.status === 'Success'
+    );
+    const totalPaid = successfulPayments.reduce(
+      (sum, payment) => sum + parseFloat(payment.amount || 0),
+      0
+    );
 
-    const studentPaymentsSum = (s.payments || [])
-      .filter((p) => p.status === 'Success')
-      .reduce((sum, p) => sum + Number(p.amount || 0), 0);
+    // Calculate balanceDue (Finance Service logic)
+    const balanceDue = Math.max(0, totalBillable - totalPaid);
 
-    const paid = Math.max(initialDep, studentPaymentsSum);
-    const pending = Math.max(0, totalFee - paid);
+    // Determine paymentStatus (Finance Service logic)
+    let paymentStatus;
+    if (totalPaid === 0) {
+      paymentStatus = 'Pending';
+    } else if (balanceDue === 0) {
+      paymentStatus = 'Paid';
+    } else {
+      paymentStatus = 'Partial';
+    }
 
-    totalRevenue += totalFee;
-    totalCollected += paid;
-    totalPending += pending;
+    totalRevenue += totalBillable;
+    totalCollected += totalPaid;
+    totalPending += balanceDue;
 
     // Payment distribution
-    if (pending === 0 && totalFee > 0) {
+    if (paymentStatus === 'Paid') {
       paidCount++;
-      paidAmount += paid;
-    } else if (paid > 0) {
+      paidAmount += totalPaid;
+    } else if (paymentStatus === 'Partial') {
       partialCount++;
-      partialAmount += paid;
-      pendingAmountSum += pending;
+      partialAmount += totalPaid;
+      pendingAmountSum += balanceDue;
     } else {
+      // Pending
       pendingCount++;
-      pendingAmountSum += pending;
+      pendingAmountSum += balanceDue;
     }
 
     // Top pending list
-    if (pending > 0) {
+    if (balanceDue > 0) {
       const activeAlloc = (s.allocations || [])[0];
       const roomNum = activeAlloc?.room?.number || '—';
       pendingStudentsList.push({
         name: `${s.firstName} ${s.lastName}`,
         room: roomNum,
-        amount: pending,
+        amount: balanceDue,
         dueDate: s.admissionDate || `${targetYear}-09-30`,
-        status: paid > 0 ? 'Partial' : 'Pending'
+        status: paymentStatus
       });
     }
 
@@ -1169,8 +1379,8 @@ export const getFinanceAnalytics = asyncHandler(async (req, res) => {
     if (!courseMap[courseName]) {
       courseMap[courseName] = { course: courseName, Collected: 0, Revenue: 0 };
     }
-    courseMap[courseName].Collected += paid;
-    courseMap[courseName].Revenue += totalFee;
+    courseMap[courseName].Collected += totalPaid;
+    courseMap[courseName].Revenue += totalBillable;
 
     // Block breakdown
     const activeAlloc = (s.allocations || [])[0];
@@ -1179,24 +1389,24 @@ export const getFinanceAnalytics = asyncHandler(async (req, res) => {
       blockMap[blockName] = { block: blockName, total: 0, paid: 0, partial: 0, pending: 0 };
     }
     blockMap[blockName].total++;
-    if (pending === 0 && totalFee > 0) {
+    if (paymentStatus === 'Paid') {
       blockMap[blockName].paid++;
-    } else if (paid > 0) {
+    } else if (paymentStatus === 'Partial') {
       blockMap[blockName].partial++;
     } else {
       blockMap[blockName].pending++;
     }
 
-    // Monthly revenue mapping
+    // Monthly revenue mapping (based on admission date)
     const createdDate = new Date(s.admissionDate || s.createdAt);
     if (createdDate.getFullYear() === targetYear) {
       const m = createdDate.getMonth();
-      monthlyRevenue[m] += totalFee;
-      monthlyPending[m] += pending;
+      monthlyRevenue[m] += totalBillable;
+      monthlyPending[m] += balanceDue;
     }
   });
 
-  // Monthly collected from payments
+  // Monthly collected from payments (based on payment date)
   allPayments.forEach((p) => {
     const payDate = new Date(p.createdAt);
     if (payDate.getFullYear() === targetYear) {

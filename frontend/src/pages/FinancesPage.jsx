@@ -554,17 +554,27 @@ export default function FinancesPage() {
             <Typography variant="h6" sx={{ fontWeight: 600, mb: 3 }}>
               Fee Collection by Course
             </Typography>
-            <Box sx={{ flex: 1, minHeight: 320 }}>
+            <Box sx={{ 
+              flex: 1, 
+              minHeight: 320, 
+              maxHeight: 360, 
+              overflowY: 'auto',
+              '&::-webkit-scrollbar': { width: '6px' },
+              '&::-webkit-scrollbar-track': { backgroundColor: 'transparent' },
+              '&::-webkit-scrollbar-thumb': { backgroundColor: 'rgba(0, 0, 0, 0.15)', borderRadius: '10px' },
+              scrollbarWidth: 'thin',
+            }}>
               {courseCollectionData.length === 0 ? (
                 <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
                   <Typography variant="body2" color="text.secondary">No student courses registered yet.</Typography>
                 </Box>
               ) : (
-                <ResponsiveContainer width="100%" height={320}>
+                <ResponsiveContainer width="100%" height={Math.max(300, courseCollectionData.length * 40)}>
                   <BarChart 
                     layout="vertical"
                     data={courseCollectionData} 
-                    margin={{ top: 10, right: 10, left: -10, bottom: 0 }}
+                    margin={{ top: 10, right: 20, left: 15, bottom: 0 }}
+                    barGap={3}
                   >
                     <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#E2E8F0" />
                     <XAxis 
@@ -572,17 +582,20 @@ export default function FinancesPage() {
                       axisLine={false} 
                       tickLine={false} 
                       tick={{ fill: '#64748B', fontSize: 11 }}
-                      tickFormatter={(v) => `₹${v/1000}K`}
+                      tickFormatter={(v) => `₹${v >= 1000 ? `${Math.round(v/1000)}k` : v}`}
                     />
                     <YAxis 
                       type="category"
                       dataKey="course" 
+                      width={140}
                       axisLine={false} 
                       tickLine={false} 
-                      tick={{ fill: '#64748B', fontSize: 11 }}
+                      tick={{ fill: '#64748B', fontSize: 11, fontWeight: 500 }}
+                      tickFormatter={(v) => v && v.length > 20 ? `${v.slice(0, 18)}…` : v}
                     />
                     <ChartTooltip 
                       formatter={(value) => [formatCurrency(value), '']}
+                      labelFormatter={(label) => `Course: ${label}`}
                       contentStyle={{ 
                         borderRadius: 8, 
                         border: 'none',
@@ -590,8 +603,8 @@ export default function FinancesPage() {
                       }} 
                     />
                     <Legend iconType="circle" />
-                    <Bar dataKey="Collected" fill="#4F46E5" radius={[0, 4, 4, 0]} barSize={10} />
-                    <Bar dataKey="Revenue" fill="#E2E8F0" radius={[0, 4, 4, 0]} barSize={10} />
+                    <Bar dataKey="Collected" fill="#4F46E5" radius={[0, 4, 4, 0]} barSize={9} />
+                    <Bar dataKey="Revenue" fill="#CBD5E1" radius={[0, 4, 4, 0]} barSize={9} />
                   </BarChart>
                 </ResponsiveContainer>
               )}
@@ -624,7 +637,7 @@ export default function FinancesPage() {
                   <BarChart 
                     layout="vertical"
                     data={blockOutstandingData} 
-                    margin={{ top: 10, right: 10, left: -10, bottom: 0 }}
+                    margin={{ top: 10, right: 20, left: 15, bottom: 0 }}
                   >
                     <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#E2E8F0" />
                     <XAxis 
@@ -633,13 +646,15 @@ export default function FinancesPage() {
                       tickLine={false} 
                       tick={{ fill: '#64748B', fontSize: 11 }}
                       domain={[0, 100]}
+                      tickFormatter={(v) => `${v}%`}
                     />
                     <YAxis 
                       type="category"
                       dataKey="block" 
+                      width={85}
                       axisLine={false} 
                       tickLine={false} 
-                      tick={{ fill: '#64748B', fontSize: 11 }}
+                      tick={{ fill: '#64748B', fontSize: 12, fontWeight: 600 }}
                     />
                     <ChartTooltip 
                       formatter={(value) => [`${value}%`, '']}
@@ -650,9 +665,9 @@ export default function FinancesPage() {
                       }} 
                     />
                     <Legend iconType="circle" />
-                    <Bar dataKey="Paid" stackId="a" fill="#16A34A" />
-                    <Bar dataKey="Partial" stackId="a" fill="#F59E0B" />
-                    <Bar dataKey="Pending" stackId="a" fill="#DC2626" />
+                    <Bar dataKey="Paid" stackId="a" fill="#16A34A" barSize={24} />
+                    <Bar dataKey="Partial" stackId="a" fill="#F59E0B" barSize={24} />
+                    <Bar dataKey="Pending" stackId="a" fill="#DC2626" barSize={24} radius={[0, 4, 4, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
               )}
@@ -661,18 +676,45 @@ export default function FinancesPage() {
 
           {/* Top Pending Students */}
           <Card sx={{ p: 3, borderRadius: '16px', height: '100%', display: 'flex', flexDirection: 'column' }}>
-            <Typography variant="h6" sx={{ fontWeight: 600, mb: 3 }}>
-              Top Pending Students
-            </Typography>
-            <TableContainer component={Paper} elevation={0} sx={{ border: 'none', flex: 1 }}>
-              <Table size="small">
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+              <Typography variant="h6" sx={{ fontWeight: 600 }}>
+                Top Pending Students
+              </Typography>
+              {topPendingStudents.length > 5 && (
+                <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 500 }}>
+                  Showing 5 of {topPendingStudents.length} (scroll for more)
+                </Typography>
+              )}
+            </Box>
+            <TableContainer
+              component={Paper}
+              elevation={0}
+              sx={{
+                border: 'none',
+                flex: 1,
+                maxHeight: 275,
+                overflowY: 'auto',
+                '&::-webkit-scrollbar': {
+                  width: '6px',
+                },
+                '&::-webkit-scrollbar-track': {
+                  backgroundColor: 'transparent',
+                },
+                '&::-webkit-scrollbar-thumb': {
+                  backgroundColor: 'rgba(0, 0, 0, 0.15)',
+                  borderRadius: '10px',
+                },
+                scrollbarWidth: 'thin',
+              }}
+            >
+              <Table size="small" stickyHeader>
                 <TableHead>
-                  <TableRow sx={{ backgroundColor: 'background.default' }}>
-                    <TableCell sx={{ fontWeight: 600 }}>Student Name</TableCell>
-                    <TableCell sx={{ fontWeight: 600 }}>Room</TableCell>
-                    <TableCell sx={{ fontWeight: 600, textAlign: 'right' }}>Pending Amount</TableCell>
-                    <TableCell sx={{ fontWeight: 600 }}>Due Date</TableCell>
-                    <TableCell sx={{ fontWeight: 600, textAlign: 'center' }}>Status</TableCell>
+                  <TableRow>
+                    <TableCell sx={{ fontWeight: 600, backgroundColor: 'background.default', whiteSpace: 'nowrap', py: 1, px: 1.25, fontSize: '0.8rem' }}>Student Name</TableCell>
+                    <TableCell sx={{ fontWeight: 600, backgroundColor: 'background.default', whiteSpace: 'nowrap', py: 1, px: 1.25, fontSize: '0.8rem' }}>Room</TableCell>
+                    <TableCell sx={{ fontWeight: 600, backgroundColor: 'background.default', whiteSpace: 'nowrap', textAlign: 'right', py: 1, px: 1.25, fontSize: '0.8rem' }}>Pending Amount</TableCell>
+                    <TableCell sx={{ fontWeight: 600, backgroundColor: 'background.default', whiteSpace: 'nowrap', py: 1, px: 1.25, fontSize: '0.8rem' }}>Due Date</TableCell>
+                    <TableCell sx={{ fontWeight: 600, backgroundColor: 'background.default', whiteSpace: 'nowrap', textAlign: 'center', py: 1, px: 1.25, fontSize: '0.8rem' }}>Status</TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
@@ -684,20 +726,22 @@ export default function FinancesPage() {
                     </TableRow>
                   ) : topPendingStudents.map((row, idx) => (
                     <TableRow key={idx} hover sx={{ '&:last-child td': { borderBottom: 0 } }}>
-                      <TableCell sx={{ fontWeight: 600 }}>{row.name}</TableCell>
-                      <TableCell sx={{ fontWeight: 500 }}>{row.room}</TableCell>
-                      <TableCell sx={{ textAlign: 'right', fontWeight: 700, color: '#DC2626' }}>
+                      <TableCell sx={{ fontWeight: 600, whiteSpace: 'nowrap', py: 0.9, px: 1.25, fontSize: '0.85rem' }}>{row.name}</TableCell>
+                      <TableCell sx={{ fontWeight: 500, whiteSpace: 'nowrap', py: 0.9, px: 1.25, fontSize: '0.85rem' }}>{row.room}</TableCell>
+                      <TableCell sx={{ textAlign: 'right', fontWeight: 700, color: '#DC2626', whiteSpace: 'nowrap', py: 0.9, px: 1.25, fontSize: '0.85rem' }}>
                         {formatCurrency(row.amount)}
                       </TableCell>
-                      <TableCell sx={{ color: 'text.secondary', fontWeight: 500 }}>
+                      <TableCell sx={{ color: 'text.secondary', fontWeight: 500, whiteSpace: 'nowrap', py: 0.9, px: 1.25, fontSize: '0.8rem' }}>
                         {dayjs(row.dueDate).format('DD MMM YYYY')}
                       </TableCell>
-                      <TableCell sx={{ textAlign: 'center' }}>
+                      <TableCell sx={{ textAlign: 'center', whiteSpace: 'nowrap', py: 0.9, px: 1.25 }}>
                         <Chip 
                           label={row.status}
                           size="small"
                           sx={{ 
                             fontWeight: 600,
+                            fontSize: '0.725rem',
+                            height: 22,
                             backgroundColor: row.status === 'Pending' ? 'rgba(220, 38, 38, 0.1)' : 'rgba(245, 158, 11, 0.1)',
                             color: row.status === 'Pending' ? '#DC2626' : '#D97706'
                           }}

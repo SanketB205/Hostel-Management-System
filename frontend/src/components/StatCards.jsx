@@ -54,7 +54,13 @@ const STATS = [
 
 export default function StatCards() {
   const { user } = useAuth();
+  const isAdmin = user?.role === 'admin';
   const [pendingComplaints, setPendingComplaints] = useState(5);
+
+  const displayStats = React.useMemo(() => {
+    if (isAdmin) return STATS;
+    return STATS.filter(s => s.title !== 'Total Staff');
+  }, [isAdmin]);
 
   useEffect(() => {
     if (!user) return;
@@ -79,12 +85,17 @@ export default function StatCards() {
     <Box 
       sx={{ 
         display: 'grid', 
-        gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr', md: 'repeat(3, 1fr)', lg: 'repeat(5, 1fr)' }, 
+        gridTemplateColumns: { 
+          xs: '1fr', 
+          sm: '1fr 1fr', 
+          md: 'repeat(2, 1fr)', 
+          lg: isAdmin ? 'repeat(5, 1fr)' : 'repeat(4, 1fr)' 
+        }, 
         gap: 3, 
         mb: 4 
       }}
     >
-      {STATS.map((stat, idx) => {
+      {displayStats.map((stat, idx) => {
         const Icon = stat.icon;
         const displayValue = stat.title === 'Pending Complaints' ? pendingComplaints : stat.value;
         return (

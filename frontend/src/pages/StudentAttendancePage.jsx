@@ -26,6 +26,7 @@ import {
 } from '@mui/material';
 import { students as studentsApi, bootstrap as bootstrapApi } from '../api';
 import { useAuth } from '../contexts/AuthContext';
+import StudentSearchModal from '../components/attendance/StudentSearchModal';
 import { 
   Users, 
   CheckCircle2, 
@@ -131,6 +132,7 @@ export default function StudentAttendancePage() {
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
   const [loading, setLoading] = useState(false);
   const [clearing, setClearing] = useState(false);
+  const [searchModalOpen, setSearchModalOpen] = useState(false);
 
   // Load real students and their attendance status for selected date and range
   useEffect(() => {
@@ -326,7 +328,7 @@ export default function StudentAttendancePage() {
               Track, analyze, and monitor overall student attendance.
             </Typography>
           </Box>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, width: { xs: '100%', md: 'auto' } }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, width: { xs: '100%', md: 'auto' }, flexWrap: 'wrap' }}>
             <DatePicker
                label="Select Date"
                value={selectedDate}
@@ -345,6 +347,23 @@ export default function StudentAttendancePage() {
                 }}
              />
             <Button
+              variant="outlined"
+              startIcon={<Users size={18} />}
+              onClick={() => setSearchModalOpen(true)}
+              sx={{ 
+                borderColor: '#4F46E5',
+                color: '#4F46E5',
+                '&:hover': { borderColor: '#4338CA', backgroundColor: 'rgba(79, 70, 229, 0.05)' },
+                borderRadius: '8px',
+                textTransform: 'none',
+                fontWeight: 600,
+                py: 1,
+                whiteSpace: 'nowrap'
+              }}
+            >
+              View Student Attendance
+            </Button>
+            <Button
               variant="contained"
               startIcon={<Download size={18} />}
               sx={{ 
@@ -353,7 +372,8 @@ export default function StudentAttendancePage() {
                 borderRadius: '8px',
                 textTransform: 'none',
                 fontWeight: 600,
-                py: 1
+                py: 1,
+                whiteSpace: 'nowrap'
               }}
             >
               Export Report
@@ -546,25 +566,45 @@ export default function StudentAttendancePage() {
             <Typography variant="h6" sx={{ fontWeight: 600, mb: 3 }}>
               Course-wise Attendance
             </Typography>
-            <TableContainer component={Paper} elevation={0} sx={{ border: 'none', flex: 1 }}>
-              <Table size="small">
+            <TableContainer 
+              component={Paper} 
+              elevation={0} 
+              sx={{ 
+                border: 'none', 
+                height: 290,
+                maxHeight: 290,
+                overflowY: 'auto',
+                '&::-webkit-scrollbar': {
+                  width: '6px',
+                },
+                '&::-webkit-scrollbar-track': {
+                  backgroundColor: 'transparent',
+                },
+                '&::-webkit-scrollbar-thumb': {
+                  backgroundColor: 'rgba(0, 0, 0, 0.15)',
+                  borderRadius: '10px',
+                },
+                scrollbarWidth: 'thin',
+              }}
+            >
+              <Table size="small" stickyHeader>
                 <TableHead>
-                  <TableRow sx={{ backgroundColor: 'background.default' }}>
-                    <TableCell sx={{ fontWeight: 600 }}>Course</TableCell>
-                    <TableCell sx={{ fontWeight: 600, textAlign: 'center' }}>Present</TableCell>
-                    <TableCell sx={{ fontWeight: 600, textAlign: 'center' }}>Absent</TableCell>
-                    <TableCell sx={{ fontWeight: 600, width: '40%' }}>Attendance %</TableCell>
+                  <TableRow sx={{ height: 38 }}>
+                    <TableCell sx={{ fontWeight: 600, backgroundColor: 'background.default', py: 0.75, fontSize: '0.8125rem' }}>Course</TableCell>
+                    <TableCell sx={{ fontWeight: 600, textAlign: 'center', backgroundColor: 'background.default', py: 0.75, fontSize: '0.8125rem' }}>Present</TableCell>
+                    <TableCell sx={{ fontWeight: 600, textAlign: 'center', backgroundColor: 'background.default', py: 0.75, fontSize: '0.8125rem' }}>Absent</TableCell>
+                    <TableCell sx={{ fontWeight: 600, width: '40%', backgroundColor: 'background.default', py: 0.75, fontSize: '0.8125rem' }}>Attendance %</TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
                   {courseAttendanceData.map((row, idx) => (
-                    <TableRow key={idx} hover sx={{ '&:last-child td': { borderBottom: 0 } }}>
-                      <TableCell sx={{ fontWeight: 500 }}>{row.course}</TableCell>
-                      <TableCell sx={{ textAlign: 'center', color: '#16A34A', fontWeight: 600 }}>{row.present}</TableCell>
-                      <TableCell sx={{ textAlign: 'center', color: '#DC2626', fontWeight: 600 }}>{row.absent}</TableCell>
-                      <TableCell>
+                    <TableRow key={idx} hover sx={{ height: 42, '&:last-child td': { borderBottom: 0 } }}>
+                      <TableCell sx={{ fontWeight: 500, py: 0.75, fontSize: '0.85rem' }}>{row.course}</TableCell>
+                      <TableCell sx={{ textAlign: 'center', color: '#16A34A', fontWeight: 600, py: 0.75, fontSize: '0.85rem' }}>{row.present}</TableCell>
+                      <TableCell sx={{ textAlign: 'center', color: '#DC2626', fontWeight: 600, py: 0.75, fontSize: '0.85rem' }}>{row.absent}</TableCell>
+                      <TableCell sx={{ py: 0.75 }}>
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                          <Typography variant="body2" sx={{ minWidth: 35, fontWeight: 600 }}>
+                          <Typography variant="body2" sx={{ minWidth: 35, fontWeight: 600, fontSize: '0.8125rem' }}>
                             {row.rate}%
                           </Typography>
                           <Box sx={{ width: '100%' }}>
@@ -589,25 +629,45 @@ export default function StudentAttendancePage() {
             <Typography variant="h6" sx={{ fontWeight: 600, mb: 3 }}>
               Year-wise Attendance
             </Typography>
-            <TableContainer component={Paper} elevation={0} sx={{ border: 'none', flex: 1 }}>
-              <Table size="small">
+            <TableContainer 
+              component={Paper} 
+              elevation={0} 
+              sx={{ 
+                border: 'none', 
+                height: 290,
+                maxHeight: 290,
+                overflowY: 'auto',
+                '&::-webkit-scrollbar': {
+                  width: '6px',
+                },
+                '&::-webkit-scrollbar-track': {
+                  backgroundColor: 'transparent',
+                },
+                '&::-webkit-scrollbar-thumb': {
+                  backgroundColor: 'rgba(0, 0, 0, 0.15)',
+                  borderRadius: '10px',
+                },
+                scrollbarWidth: 'thin',
+              }}
+            >
+              <Table size="small" stickyHeader>
                 <TableHead>
-                  <TableRow sx={{ backgroundColor: 'background.default' }}>
-                    <TableCell sx={{ fontWeight: 600 }}>Year</TableCell>
-                    <TableCell sx={{ fontWeight: 600, textAlign: 'center' }}>Present</TableCell>
-                    <TableCell sx={{ fontWeight: 600, textAlign: 'center' }}>Absent</TableCell>
-                    <TableCell sx={{ fontWeight: 600, width: '40%' }}>Attendance %</TableCell>
+                  <TableRow sx={{ height: 38 }}>
+                    <TableCell sx={{ fontWeight: 600, backgroundColor: 'background.default', py: 0.75, fontSize: '0.8125rem' }}>Year</TableCell>
+                    <TableCell sx={{ fontWeight: 600, textAlign: 'center', backgroundColor: 'background.default', py: 0.75, fontSize: '0.8125rem' }}>Present</TableCell>
+                    <TableCell sx={{ fontWeight: 600, textAlign: 'center', backgroundColor: 'background.default', py: 0.75, fontSize: '0.8125rem' }}>Absent</TableCell>
+                    <TableCell sx={{ fontWeight: 600, width: '40%', backgroundColor: 'background.default', py: 0.75, fontSize: '0.8125rem' }}>Attendance %</TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
                   {yearAttendanceData.map((row, idx) => (
-                    <TableRow key={idx} hover sx={{ '&:last-child td': { borderBottom: 0 } }}>
-                      <TableCell sx={{ fontWeight: 500 }}>{row.year}</TableCell>
-                      <TableCell sx={{ textAlign: 'center', color: '#16A34A', fontWeight: 600 }}>{row.present}</TableCell>
-                      <TableCell sx={{ textAlign: 'center', color: '#DC2626', fontWeight: 600 }}>{row.absent}</TableCell>
-                      <TableCell>
+                    <TableRow key={idx} hover sx={{ height: 42, '&:last-child td': { borderBottom: 0 } }}>
+                      <TableCell sx={{ fontWeight: 500, py: 0.75, fontSize: '0.85rem' }}>{row.year}</TableCell>
+                      <TableCell sx={{ textAlign: 'center', color: '#16A34A', fontWeight: 600, py: 0.75, fontSize: '0.85rem' }}>{row.present}</TableCell>
+                      <TableCell sx={{ textAlign: 'center', color: '#DC2626', fontWeight: 600, py: 0.75, fontSize: '0.85rem' }}>{row.absent}</TableCell>
+                      <TableCell sx={{ py: 0.75 }}>
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                          <Typography variant="body2" sx={{ minWidth: 35, fontWeight: 600 }}>
+                          <Typography variant="body2" sx={{ minWidth: 35, fontWeight: 600, fontSize: '0.8125rem' }}>
                             {row.rate}%
                           </Typography>
                           <Box sx={{ width: '100%' }}>
@@ -643,25 +703,45 @@ export default function StudentAttendancePage() {
             <Typography variant="h6" sx={{ fontWeight: 600, mb: 3 }}>
               Hostel Block-wise Attendance
             </Typography>
-            <TableContainer component={Paper} elevation={0} sx={{ border: 'none', flex: 1 }}>
-              <Table size="small">
+            <TableContainer 
+              component={Paper} 
+              elevation={0} 
+              sx={{ 
+                border: 'none', 
+                height: 206,
+                maxHeight: 206,
+                overflowY: 'auto',
+                '&::-webkit-scrollbar': {
+                  width: '6px',
+                },
+                '&::-webkit-scrollbar-track': {
+                  backgroundColor: 'transparent',
+                },
+                '&::-webkit-scrollbar-thumb': {
+                  backgroundColor: 'rgba(0, 0, 0, 0.15)',
+                  borderRadius: '10px',
+                },
+                scrollbarWidth: 'thin',
+              }}
+            >
+              <Table size="small" stickyHeader>
                 <TableHead>
-                  <TableRow sx={{ backgroundColor: 'background.default' }}>
-                    <TableCell sx={{ fontWeight: 600 }}>Block</TableCell>
-                    <TableCell sx={{ fontWeight: 600, textAlign: 'center' }}>Present</TableCell>
-                    <TableCell sx={{ fontWeight: 600, textAlign: 'center' }}>Absent</TableCell>
-                    <TableCell sx={{ fontWeight: 600, width: '40%' }}>Attendance %</TableCell>
+                  <TableRow sx={{ height: 38 }}>
+                    <TableCell sx={{ fontWeight: 600, backgroundColor: 'background.default', py: 0.75, fontSize: '0.8125rem' }}>Block</TableCell>
+                    <TableCell sx={{ fontWeight: 600, textAlign: 'center', backgroundColor: 'background.default', py: 0.75, fontSize: '0.8125rem' }}>Present</TableCell>
+                    <TableCell sx={{ fontWeight: 600, textAlign: 'center', backgroundColor: 'background.default', py: 0.75, fontSize: '0.8125rem' }}>Absent</TableCell>
+                    <TableCell sx={{ fontWeight: 600, width: '40%', backgroundColor: 'background.default', py: 0.75, fontSize: '0.8125rem' }}>Attendance %</TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
                   {blockAttendanceData.map((row, idx) => (
-                    <TableRow key={idx} hover sx={{ '&:last-child td': { borderBottom: 0 } }}>
-                      <TableCell sx={{ fontWeight: 500 }}>{row.block}</TableCell>
-                      <TableCell sx={{ textAlign: 'center', color: '#16A34A', fontWeight: 600 }}>{row.present}</TableCell>
-                      <TableCell sx={{ textAlign: 'center', color: '#DC2626', fontWeight: 600 }}>{row.absent}</TableCell>
-                      <TableCell>
+                    <TableRow key={idx} hover sx={{ height: 42, '&:last-child td': { borderBottom: 0 } }}>
+                      <TableCell sx={{ fontWeight: 500, py: 0.75, fontSize: '0.85rem' }}>{row.block}</TableCell>
+                      <TableCell sx={{ textAlign: 'center', color: '#16A34A', fontWeight: 600, py: 0.75, fontSize: '0.85rem' }}>{row.present}</TableCell>
+                      <TableCell sx={{ textAlign: 'center', color: '#DC2626', fontWeight: 600, py: 0.75, fontSize: '0.85rem' }}>{row.absent}</TableCell>
+                      <TableCell sx={{ py: 0.75 }}>
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                          <Typography variant="body2" sx={{ minWidth: 35, fontWeight: 600 }}>
+                          <Typography variant="body2" sx={{ minWidth: 35, fontWeight: 600, fontSize: '0.8125rem' }}>
                             {row.rate}%
                           </Typography>
                           <Box sx={{ width: '100%' }}>
@@ -847,7 +927,14 @@ export default function StudentAttendancePage() {
             {snackbar.message}
           </Alert>
         </Snackbar>
+
+        {/* Student Search Modal */}
+        <StudentSearchModal
+          open={searchModalOpen}
+          onClose={() => setSearchModalOpen(false)}
+        />
       </Box>
     </LocalizationProvider>
   );
 }
+ 

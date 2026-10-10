@@ -107,11 +107,16 @@ export default function Sidebar({ mobileOpen, handleDrawerToggle }) {
   const filteredSidebarItems = React.useMemo(() => {
     return SIDEBAR_ITEMS.map(item => {
       if (item.children) {
+        if ((role === 'student' || role === 'rector') && item.title === 'Attendance') {
+          return {
+            title: 'Attendance',
+            path: '/attendance/student',
+            icon: item.icon,
+          };
+        }
+
         const filteredChildren = item.children.filter(child => {
-          if (role === 'student') {
-            if (child.path === '/attendance/staff') return false;
-          }
-          if (role === 'rector') {
+          if (role === 'rector' || role === 'student') {
             if (child.path === '/attendance/staff') return false;
           }
           return true;
@@ -120,9 +125,14 @@ export default function Sidebar({ mobileOpen, handleDrawerToggle }) {
         return { ...item, children: filteredChildren };
       }
 
-      // Hide students/staff pages from student role
+      // Hide students/staff/rooms pages from student role
       if (role === 'student') {
-        if (item.path === '/students' || item.path === '/staff') return null;
+        if (item.path === '/students' || item.path === '/staff' || item.path === '/rooms') return null;
+      }
+
+      // Hide staff page from rector role
+      if (role === 'rector') {
+        if (item.path === '/staff') return null;
       }
 
       return item;
