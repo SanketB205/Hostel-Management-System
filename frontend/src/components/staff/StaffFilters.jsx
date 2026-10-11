@@ -12,7 +12,7 @@ import {
 } from '@mui/material';
 import { Search, RotateCcw, Plus } from 'lucide-react';
 
-export default function StaffFilters({ filters, setFilters, onReset, onAddClick }) {
+export default function StaffFilters({ filters, setFilters, onReset, onAddClick, designationOptions = [], assignedBlockOptions = [] }) {
   const theme = useTheme();
 
   const handleFilterChange = (field) => (event) => {
@@ -62,6 +62,7 @@ export default function StaffFilters({ filters, setFilters, onReset, onAddClick 
           gap: 2,
           flexWrap: 'wrap'
         }}>
+          {/* Designation — populated from real staff data */}
           <FormControl size="small" sx={{ minWidth: 150 }}>
             <InputLabel>Designation</InputLabel>
             <Select
@@ -70,14 +71,13 @@ export default function StaffFilters({ filters, setFilters, onReset, onAddClick 
               onChange={handleFilterChange('designation')}
             >
               <MenuItem value="All">All Designations</MenuItem>
-              <MenuItem value="Warden">Warden</MenuItem>
-              <MenuItem value="Security">Security</MenuItem>
-              <MenuItem value="Cleaning">Cleaning</MenuItem>
-              <MenuItem value="Maintenance">Maintenance</MenuItem>
-              <MenuItem value="Mess Staff">Mess Staff</MenuItem>
+              {designationOptions.map(d => (
+                <MenuItem key={d} value={d}>{d}</MenuItem>
+              ))}
             </Select>
           </FormControl>
 
+          {/* Assigned Block — populated from real staff data */}
           <FormControl size="small" sx={{ minWidth: 140 }}>
             <InputLabel>Assigned Block</InputLabel>
             <Select
@@ -86,11 +86,9 @@ export default function StaffFilters({ filters, setFilters, onReset, onAddClick 
               onChange={handleFilterChange('assignedBlock')}
             >
               <MenuItem value="All">All Blocks</MenuItem>
-              <MenuItem value="Block A">Block A</MenuItem>
-              <MenuItem value="Block B">Block B</MenuItem>
-              <MenuItem value="Block C">Block C</MenuItem>
-              <MenuItem value="Main Gate">Main Gate</MenuItem>
-              <MenuItem value="Mess Area">Mess Area</MenuItem>
+              {assignedBlockOptions.map(b => (
+                <MenuItem key={b} value={b}>{b}</MenuItem>
+              ))}
             </Select>
           </FormControl>
 

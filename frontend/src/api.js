@@ -83,6 +83,9 @@ export const hostel = {
    */
   updateRoomStatus: (roomId, operationalStatus) =>
     request('PATCH', `/hostel/rooms/${roomId}/operational-status`, { operationalStatus }),
+
+  /** Dashboard stats — counts, charts, recent registrations */
+  getDashboardStats: () => request('GET', '/hostel/dashboard/stats'),
 };
 
 // ── Students ──────────────────────────────────────────────────────────────────
@@ -123,6 +126,8 @@ export const staff = {
   list: () => request('GET', '/staff'),
   getById: (id) => request('GET', `/staff/${id}`),
   create: (staffData) => request('POST', '/staff', staffData),
+  update: (id, staffData) => request('PUT', `/staff/${id}`, staffData),
+  delete: (id) => request('DELETE', `/staff/${id}`),
 };
 
 // ── Complaints ────────────────────────────────────────────────────────────────

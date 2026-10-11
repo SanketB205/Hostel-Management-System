@@ -114,18 +114,22 @@ const schema = yup.object().shape({
     .matches(/^[0-9+\-\s()]{10,15}$/, 'Invalid phone number format')
     .required('Emergency phone number is required'),
   
-  giveSystemAccess: yup.boolean(),
-  username: yup.string().when('giveSystemAccess', {
+  provideSystemAccess: yup.boolean().default(false),
+  loginEmail: yup.string().when('provideSystemAccess', {
     is: true,
-    then: (schema) => schema.required('Username / Email is required'),
+    then: (schema) => schema
+      .required('Login email is required')
+      .email('Please enter a valid email address'),
     otherwise: (schema) => schema.nullable().notRequired()
   }),
-  password: yup.string().when('giveSystemAccess', {
+  password: yup.string().when('provideSystemAccess', {
     is: true,
-    then: (schema) => schema.required('Password is required'),
+    then: (schema) => schema
+      .required('Password is required')
+      .min(6, 'Password must be at least 6 characters long'),
     otherwise: (schema) => schema.nullable().notRequired()
   }),
-  confirmPassword: yup.string().when('giveSystemAccess', {
+  confirmPassword: yup.string().when('provideSystemAccess', {
     is: true,
     then: (schema) => schema
       .required('Confirm password is required')
@@ -161,22 +165,12 @@ export default function StaffRegistrationPage() {
       staffId: 'Generating...', designation: '', joiningDate: null, employmentType: '',
       assignedArea: '', assignedBlock: '', shift: '',
       emergencyContactName: '', relationship: '', emergencyPhone: '',
-      giveSystemAccess: false, username: '', password: '', confirmPassword: ''
+      provideSystemAccess: false, loginEmail: '', password: '', confirmPassword: ''
     }
   });
 
   const watchAssignedArea = watch('assignedArea');
-  const watchGiveSystemAccess = watch('giveSystemAccess');
-  const watchDesignation = watch('designation');
-
-  useEffect(() => {
-    if (watchDesignation !== 'Warden / Rector') {
-      setValue('giveSystemAccess', false);
-      setValue('username', '');
-      setValue('password', '');
-      setValue('confirmPassword', '');
-    }
-  }, [watchDesignation, setValue]);
+  const watchProvideSystemAccess = watch('provideSystemAccess');
 
   // Fetch next Staff ID from backend on mount
   useEffect(() => {
@@ -221,7 +215,7 @@ export default function StaffRegistrationPage() {
       staffId: 'Generating...', designation: '', joiningDate: null, employmentType: '',
       assignedArea: '', assignedBlock: '', shift: '',
       emergencyContactName: '', relationship: '', emergencyPhone: '',
-      giveSystemAccess: false, username: '', password: '', confirmPassword: ''
+      provideSystemAccess: false, loginEmail: '', password: '', confirmPassword: ''
     });
     setUploadedFiles({});
     setPhotoPreview(null);
@@ -273,15 +267,20 @@ export default function StaffRegistrationPage() {
         emergencyContactName: data.emergencyContactName,
         relationship: data.relationship,
         emergencyPhone: data.emergencyPhone,
-        giveSystemAccess: !!data.giveSystemAccess,
-        username: data.giveSystemAccess ? data.username : '',
-        password: data.giveSystemAccess ? data.password : '',
+        provideSystemAccess: Boolean(data.provideSystemAccess),
+        loginEmail: data.provideSystemAccess ? data.loginEmail.trim().toLowerCase() : undefined,
+        password: data.provideSystemAccess ? data.password : undefined,
+        confirmPassword: data.provideSystemAccess ? data.confirmPassword : undefined,
         uploadedFiles,
       };
 
-      await staffApi.create(payload);
+      const res = await staffApi.create(payload);
 
-      setSnackbar({ open: true, message: 'Staff registered successfully!', severity: 'success' });
+      const successMsg = res.message || (payload.provideSystemAccess
+        ? 'Staff registered successfully with system access.'
+        : 'Staff registered successfully. No system access was created.');
+
+      setSnackbar({ open: true, message: successMsg, severity: 'success' });
 
       if (addAnother) {
         // Reset form to default except next generated ID which we fetch asynchronously
@@ -290,7 +289,7 @@ export default function StaffRegistrationPage() {
           staffId: 'Generating...', designation: '', joiningDate: null, employmentType: '',
           assignedArea: '', assignedBlock: '', shift: '',
           emergencyContactName: '', relationship: '', emergencyPhone: '',
-          giveSystemAccess: false, username: '', password: '', confirmPassword: ''
+          provideSystemAccess: false, loginEmail: '', password: '', confirmPassword: ''
         });
         setUploadedFiles({});
         setPhotoPreview(null);
@@ -314,7 +313,7 @@ export default function StaffRegistrationPage() {
         }
       } else {
         // Return to staff directory with success state
-        navigate('/staff', { state: { successMessage: 'Staff registered successfully!' } });
+        navigate('/staff', { state: { successMessage: successMsg } });
       }
     } catch (error) {
       setSnackbar({ open: true, message: error.message || 'Failed to save staff.', severity: 'error' });
@@ -326,7 +325,7 @@ export default function StaffRegistrationPage() {
   const blocksList = mockBlocks && mockBlocks.length > 0 ? mockBlocks : [{ name: 'Block A' }, { name: 'Block B' }, { name: 'Block C' }];
 
   return (
-    <Box sx={{ animation: 'fadeIn 0.5s ease-out' }}>
+    <Box sx={{ animation: 'fadeIn 0.5s ease-out', pb: '80px' }}>
       <PageContainer>
         {/* Header */}
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 1 }}>
@@ -570,26 +569,32 @@ export default function StaffRegistrationPage() {
           </SectionCard>
 
           {/* SECTION 5 — SYSTEM ACCESS */}
-          {watchDesignation === 'Warden / Rector' && (
-            <SectionCard>
-              <CardContent sx={{ p: { xs: 2, sm: 4 } }}>
-                <SectionHeaderBox>
-                  <IconWrapper><Lock size={24} /></IconWrapper>
+          <SectionCard>
+            <CardContent sx={{ p: { xs: 2, sm: 4 } }}>
+              <SectionHeaderBox>
+                <IconWrapper><Lock size={24} /></IconWrapper>
+                <Box>
                   <Typography variant="h6" sx={{ fontWeight: 700 }}>System Access</Typography>
-                </SectionHeaderBox>
-                <Box sx={{ mb: watchGiveSystemAccess ? 3 : 0 }}>
-                  <Controller
-                    name="giveSystemAccess"
-                    control={control}
-                    render={({ field }) => (
+                  <Typography variant="caption" color="text.secondary">
+                    Configure application login access for this staff member
+                  </Typography>
+                </Box>
+              </SectionHeaderBox>
+              <Box sx={{ mb: watchProvideSystemAccess ? 3 : 0 }}>
+                <Controller
+                  name="provideSystemAccess"
+                  control={control}
+                  render={({ field }) => (
+                    <Box>
                       <FormControlLabel
                         control={
                           <Switch
-                            checked={field.value}
+                            checked={Boolean(field.value)}
                             onChange={(e) => {
-                              field.onChange(e.target.checked);
-                              if (!e.target.checked) {
-                                setValue('username', '');
+                              const isChecked = e.target.checked;
+                              field.onChange(isChecked);
+                              if (!isChecked) {
+                                setValue('loginEmail', '');
                                 setValue('password', '');
                                 setValue('confirmPassword', '');
                               }
@@ -597,64 +602,99 @@ export default function StaffRegistrationPage() {
                             color="primary"
                           />
                         }
-                        label="Give System Login Access"
+                        label={
+                          <Typography variant="body1" sx={{ fontWeight: 600 }}>
+                            Provide System Access
+                          </Typography>
+                        }
                       />
-                    )}
-                  />
-                </Box>
+                      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', ml: 4.5, mt: -0.5 }}>
+                        Enable this option to create login credentials and grant authorized system access.
+                      </Typography>
+                    </Box>
+                  )}
+                />
+              </Box>
 
-                {watchGiveSystemAccess && (
-                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, animation: 'fadeIn 0.3s ease-out' }}>
-                    <GridBox>
-                      <Controller name="username" control={control} render={({ field }) => (
-                        <TextField {...field} fullWidth label="Username / Email *" error={!!errors.username} helperText={errors.username?.message} />
-                      )} />
-                      <Controller name="password" control={control} render={({ field }) => (
+              {watchProvideSystemAccess && (
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, pt: 1, animation: 'fadeIn 0.3s ease-out' }}>
+                  <GridBox>
+                    <Controller
+                      name="loginEmail"
+                      control={control}
+                      render={({ field }) => (
+                        <TextField
+                          {...field}
+                          fullWidth
+                          label="Login Email *"
+                          type="email"
+                          placeholder="rector@example.com"
+                          error={!!errors.loginEmail}
+                          helperText={errors.loginEmail?.message || 'Email used for logging into the portal'}
+                        />
+                      )}
+                    />
+                    <Controller
+                      name="password"
+                      control={control}
+                      render={({ field }) => (
                         <TextField
                           {...field}
                           type={showPassword ? 'text' : 'password'}
                           fullWidth
                           label="Password *"
                           error={!!errors.password}
-                          helperText={errors.password?.message}
+                          helperText={errors.password?.message || 'Minimum 6 characters'}
                           slotProps={{
                             input: {
                               endAdornment: (
-                                <IconButton onClick={() => setShowPassword(!showPassword)} edge="end">
+                                <IconButton
+                                  onClick={() => setShowPassword(!showPassword)}
+                                  edge="end"
+                                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                                >
                                   {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                                 </IconButton>
                               )
                             }
                           }}
                         />
-                      )} />
-                    </GridBox>
-                    <Box sx={{ width: { xs: '100%', sm: '50%' }, pr: { sm: 1.5 } }}>
-                      <Controller name="confirmPassword" control={control} render={({ field }) => (
+                      )}
+                    />
+                  </GridBox>
+                  <Box sx={{ width: { xs: '100%', sm: '50%' }, pr: { sm: 1.5 } }}>
+                    <Controller
+                      name="confirmPassword"
+                      control={control}
+                      render={({ field }) => (
                         <TextField
                           {...field}
                           type={showConfirmPassword ? 'text' : 'password'}
                           fullWidth
                           label="Confirm Password *"
                           error={!!errors.confirmPassword}
-                          helperText={errors.confirmPassword?.message}
+                          helperText={errors.confirmPassword?.message || 'Must match password exactly'}
                           slotProps={{
                             input: {
                               endAdornment: (
-                                <IconButton onClick={() => setShowConfirmPassword(!showConfirmPassword)} edge="end">
+                                <IconButton
+                                  onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                                  edge="end"
+                                  aria-label={showConfirmPassword ? 'Hide confirm password' : 'Show confirm password'}
+                                >
                                   {showConfirmPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                                 </IconButton>
                               )
                             }
                           }}
                         />
-                      )} />
-                    </Box>
+                      )}
+                    />
                   </Box>
-                )}
-              </CardContent>
-            </SectionCard>
-          )}
+                </Box>
+              )}
+            </CardContent>
+          </SectionCard>
 
           {/* SECTION 6 — DOCUMENTS UPLOAD */}
           <SectionCard>
@@ -710,16 +750,17 @@ export default function StaffRegistrationPage() {
         </LocalizationProvider>
       </PageContainer>
 
-      {/* BOTTOM STICKY ACTION BAR */}
+      {/* BOTTOM FIXED ACTION BAR */}
       <Box sx={{
-        p: 3, mt: 4,
-        mx: { xs: -2, sm: -3, md: -4 },
-        mb: { xs: -2, sm: -3, md: -4 },
+        py: 2,
+        px: { xs: 2, sm: 3, md: 4 },
         borderTop: `1px solid ${theme.palette.divider}`,
         display: 'flex', justifyContent: 'space-between', alignItems: 'center',
         backgroundColor: 'background.paper',
-        position: 'sticky',
-        bottom: { xs: -16, sm: -24, md: -32 },
+        position: 'fixed',
+        bottom: 0,
+        left: { xs: 0, md: '280px' },
+        right: 0,
         zIndex: 10,
         boxShadow: '0 -4px 12px rgba(0,0,0,0.05)',
       }}>

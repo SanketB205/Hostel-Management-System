@@ -1,4 +1,4 @@
-import { BedAllocation, Floor, HostelBlock, Room, Student, Staff, Complaint, User } from '../models/index.js';
+import { BedAllocation, Floor, HostelBlock, Room, Student, Staff, Complaint, User, Payment } from '../models/index.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { sequelize } from '../config/database.js';
 import { Op } from 'sequelize';
@@ -404,19 +404,36 @@ export const updateRoomOperationalStatus = asyncHandler(async (req, res) => {
 
 export const getDashboardStats = asyncHandler(async (req, res) => {
   // 1. Total counts
-  const totalStudents = await Student.count({
-    include: [{
-      model: User,
-      as: 'user',
-      where: { role: 'student' }
-    }]
-  });
+  const totalStudents = await Student.count();
   const totalStaff = await Staff.count();
-  const pendingComplaints = await Complaint.count({
+
+  // All pending complaints (Students & Rector both)
+  const totalPendingComplaints = await Complaint.count({
     where: {
-      status: { [Op.in]: ['Pending', 'In Progress'] }
+      status: 'Pending'
     }
   });
+
+  // Student-only pending complaints
+  const pendingStudentComplaints = await Complaint.count({
+    where: {
+      status: 'Pending'
+    },
+    include: [{
+      model: Student,
+      as: 'student',
+      required: true,
+      include: [{
+        model: User,
+        as: 'user',
+        where: { role: 'student' },
+        required: true
+      }]
+    }]
+  });
+
+  const isRector = req.user?.role === 'rector';
+  const pendingComplaints = isRector ? pendingStudentComplaints : totalPendingComplaints;
 
   // 2. Room Status counts — use operationalStatus for admin overrides, then compute from beds
   const rooms = await Room.findAll({
@@ -446,33 +463,104 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
     }
   });
 
-  // 3. Monthly revenue calculation based on active bed allocations
+  // 3. Monthly revenue calculation (use successful payments if present, fallback to active allocations)
   const currentYear = new Date().getFullYear();
   const monthlyRevenue = [];
   const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   
+  const successfulPaymentCount = await Payment.count({ where: { status: 'Success' } }).catch(() => 0);
+
   for (let m = 0; m < 12; m++) {
     const startOfMonth = new Date(currentYear, m, 1);
-    const endOfMonth = new Date(currentYear, m + 1, 0); // last day of month
+    const endOfMonth = new Date(currentYear, m + 1, 0, 23, 59, 59, 999);
     
-    const startStr = startOfMonth.toISOString().slice(0, 10);
-    const endStr = endOfMonth.toISOString().slice(0, 10);
+    if (successfulPaymentCount > 0) {
+      const sum = await Payment.sum('amount', {
+        where: {
+          status: 'Success',
+          [Op.or]: [
+            { paymentDate: { [Op.between]: [startOfMonth, endOfMonth] } },
+            { 
+              paymentDate: null,
+              createdAt: { [Op.between]: [startOfMonth, endOfMonth] }
+            }
+          ]
+        }
+      }).catch(() => 0);
 
-    const activeCount = await BedAllocation.count({
-      where: {
-        allocatedAt: { [Op.lte]: endStr },
-        [Op.or]: [
-          { vacatedAt: null },
-          { vacatedAt: { [Op.gte]: startStr } }
-        ]
-      }
-    });
+      monthlyRevenue.push({
+        name: monthNames[m],
+        value: Number(sum || 0)
+      });
+    } else {
+      const startStr = startOfMonth.toISOString().slice(0, 10);
+      const endStr = endOfMonth.toISOString().slice(0, 10);
 
-    monthlyRevenue.push({
-      name: monthNames[m],
-      value: activeCount * 2000 // Each active allocation pays 2000 per month
-    });
+      const activeCount = await BedAllocation.count({
+        where: {
+          allocatedAt: { [Op.lte]: endStr },
+          [Op.or]: [
+            { vacatedAt: null },
+            { vacatedAt: { [Op.gte]: startStr } }
+          ]
+        }
+      });
+
+      monthlyRevenue.push({
+        name: monthNames[m],
+        value: activeCount * 2000 // Each active allocation pays 2000 per month
+      });
+    }
   }
+
+  // 4. Recent student registrations (last 10, most recent first)
+  const recentStudents = await Student.findAll({
+    include: [
+      {
+        model: BedAllocation,
+        as: 'allocations',
+        required: false,
+        where: { status: 'active' },
+        include: [{ model: Room, as: 'room', attributes: ['number'] }],
+        order: [['allocatedAt', 'DESC']],
+        limit: 1,
+      },
+    ],
+    order: [['createdAt', 'DESC']],
+    limit: 10,
+    attributes: [
+      'id',
+      'firstName',
+      'lastName',
+      'registrationNumber',
+      'course',
+      'department',
+      'year',
+      'phone',
+      'paymentStatus',
+      'status',
+      'createdAt',
+    ],
+  });
+
+  const recentStudentsList = recentStudents.map(s => {
+    const json = s.toJSON();
+    const latestAllocation = (json.allocations || [])[0];
+    return {
+      studentId: json.id,
+      id: json.registrationNumber,
+      regNo: json.registrationNumber,
+      name: `${json.firstName} ${json.lastName}`,
+      room: latestAllocation?.room?.number || '—',
+      course: json.course || '—',
+      department: json.department || '—',
+      year: json.year || '—',
+      phone: json.phone || '—',
+      paymentStatus: json.paymentStatus || 'Pending',
+      status: json.status || 'Not Marked',
+      date: json.createdAt,
+    };
+  });
 
   res.json({
     data: {
@@ -480,6 +568,9 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
         totalStudents,
         totalStaff,
         pendingComplaints,
+        totalPendingComplaints,
+        pendingStudentComplaints,
+        pendingRectorComplaints: Math.max(0, totalPendingComplaints - pendingStudentComplaints),
         occupiedRooms,
         availableRooms,
         maintenanceRooms
@@ -489,7 +580,8 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
         { name: 'Available', value: availableRooms, color: '#22C55E' },
         { name: 'Maintenance', value: maintenanceRooms, color: '#EF4444' }
       ],
-      revenueChart: monthlyRevenue
+      revenueChart: monthlyRevenue,
+      recentStudents: recentStudentsList,
     }
   });
 });

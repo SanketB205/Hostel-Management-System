@@ -19,6 +19,7 @@ import RoomAllocationPage from './pages/RoomAllocationPage';
 import ViewStudentDetailsPage from './pages/ViewStudentDetailsPage';
 import EditStudentPage from './pages/EditStudentPage';
 import ViewStaffDetailsPage from './pages/ViewStaffDetailsPage';
+import EditStaffPage from './pages/EditStaffPage';
 import StudentAttendancePage from './pages/StudentAttendancePage';
 import StaffAttendancePage from './pages/StaffAttendancePage';
 import FinancesPage from './pages/FinancesPage';
@@ -32,6 +33,7 @@ import { useAuth } from './contexts/AuthContext';
 import StudentDashboard from './components/student/StudentDashboard';
 
 import StudentPersonalAttendancePage from './pages/StudentPersonalAttendancePage';
+import ProfilePage from './pages/ProfilePage';
 
 function DashboardView() {
   const { user } = useAuth();
@@ -101,6 +103,8 @@ function DashboardLayout() {
               <Route path="/students/:id/edit" element={<EditStudentPage />} />
               <Route path="/students/edit/:id" element={<EditStudentPage />} />
               <Route path="/staff" element={<AdminOnlyRoute><StaffPage /></AdminOnlyRoute>} />
+              <Route path="/staff/:id/edit" element={<AdminOnlyRoute><EditStaffPage /></AdminOnlyRoute>} />
+              <Route path="/staff/edit/:id" element={<AdminOnlyRoute><EditStaffPage /></AdminOnlyRoute>} />
               <Route path="/staff/:id" element={<AdminOnlyRoute><ViewStaffDetailsPage /></AdminOnlyRoute>} />
               <Route path="/staff/add" element={<AdminOnlyRoute><StaffRegistrationPage /></AdminOnlyRoute>} />
               <Route path="/complaints" element={<ComplaintsRoute />} />
@@ -115,6 +119,7 @@ function DashboardLayout() {
               <Route path="/attendance/staff" element={<AdminOnlyRoute><StaffAttendancePage /></AdminOnlyRoute>} />
               <Route path="/finances" element={<FinancesRoute />} />
               <Route path="/settings" element={<SettingsPage />} />
+              <Route path="/profile" element={<ProfilePage />} />
               <Route path="*" element={<Navigate to="/login" replace />} />
             </Routes>
           </Box>

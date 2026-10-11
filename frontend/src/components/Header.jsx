@@ -13,12 +13,14 @@ import {
 import { Search, Bell, Menu as MenuIcon, Moon, Sun } from 'lucide-react';
 import { ColorModeContext } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
+import { useNavigate } from 'react-router-dom';
 import ProfileAvatar from './ProfileAvatar';
 
 export default function Header({ handleDrawerToggle }) {
   const theme = useTheme();
   const colorMode = useContext(ColorModeContext);
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [complaintCount, setComplaintCount] = useState(0);
 
   useEffect(() => {
@@ -135,7 +137,10 @@ export default function Header({ handleDrawerToggle }) {
             {theme.palette.mode === 'dark' ? <Sun size={20} color={theme.palette.text.secondary} /> : <Moon size={20} color={theme.palette.text.secondary} />}
           </IconButton>
           
-          <Box 
+          <Box
+            role="button"
+            aria-label="View my profile"
+            onClick={() => navigate('/profile')}
             sx={{ 
               display: 'flex', 
               alignItems: 'center', 

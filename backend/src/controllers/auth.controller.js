@@ -1,7 +1,7 @@
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import { env } from '../config/env.js';
-import { Staff, Student, User } from '../models/index.js';
+import { BedAllocation, Floor, HostelBlock, Room, Staff, Student, User } from '../models/index.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 
 const createToken = (user) => jwt.sign({ role: user.role }, env.jwtSecret, {
@@ -34,28 +34,118 @@ export const login = asyncHandler(async (req, res) => {
 });
 
 export const me = asyncHandler(async (req, res) => {
-  const { id, email, role, lastLoginAt } = req.user;
+  const { id, email, role, lastLoginAt, createdAt } = req.user;
 
   let profile = null;
 
   if (role === 'student') {
-    const student = await Student.findOne({ where: { userId: id } });
+    const student = await Student.findOne({
+      where: { userId: id },
+      include: [
+        {
+          model: BedAllocation,
+          as: 'allocations',
+          required: false,
+          where: { status: 'active' },
+          include: [{
+            model: Room,
+            as: 'room',
+            attributes: ['id', 'number', 'type', 'capacity'],
+            include: [{
+              model: Floor,
+              as: 'floor',
+              attributes: ['floorNumber'],
+              include: [{
+                model: HostelBlock,
+                as: 'block',
+                attributes: ['name'],
+              }],
+            }],
+          }],
+          order: [['allocatedAt', 'DESC']],
+          limit: 1,
+        },
+      ],
+    });
     if (student) {
+      const sJson = student.toJSON();
+      const activeAllocation = (sJson.allocations || [])[0];
       profile = {
         studentId: student.id,
+        registrationNumber: student.registrationNumber,
+        firstName: student.firstName,
+        lastName: student.lastName,
         name: `${student.firstName} ${student.lastName}`,
         phone: student.phone || null,
+        address: student.address || null,
+        gender: student.gender || null,
+        dateOfBirth: student.dateOfBirth || null,
+        studentEmail: student.email || null,
+        department: student.department || null,
+        course: student.course || null,
+        year: student.year || null,
+        yearOfStudy: student.yearOfStudy || null,
+        admissionDate: student.admissionDate || null,
+        guardianName: student.guardianName || null,
+        guardianRelationship: student.guardianRelationship || null,
+        guardianPhone: student.guardianPhone || null,
+        guardianEmail: student.guardianEmail || null,
+        status: student.status || 'Not Marked',
         username: student.registrationNumber,
+        createdAt: student.createdAt || createdAt,
+        // Room info
+        room: activeAllocation?.room?.number || null,
+        roomType: activeAllocation?.room?.type || null,
+        bedNumber: activeAllocation?.bedNumber || null,
+        floor: activeAllocation?.room?.floor?.floorNumber != null
+          ? `Floor ${activeAllocation.room.floor.floorNumber}` : null,
+        block: activeAllocation?.room?.floor?.block?.name || null,
+        allocatedAt: activeAllocation?.allocatedAt || null,
       };
     }
   } else if (role === 'rector' || role === 'admin') {
-    const staff = await Staff.findOne({ where: { userId: id } });
-    if (staff) {
+    const staffMember = await Staff.findOne({ where: { userId: id } });
+    if (staffMember) {
       profile = {
-        name: `${staff.firstName} ${staff.lastName}`,
-        phone: staff.phone || null,
-        username: staff.staffId,
-        designation: staff.designation,
+        staffId: staffMember.id,
+        name: `${staffMember.firstName} ${staffMember.lastName}`,
+        firstName: staffMember.firstName,
+        lastName: staffMember.lastName,
+        phone: staffMember.phone || null,
+        address: staffMember.address || null,
+        gender: staffMember.gender || null,
+        dateOfBirth: staffMember.dateOfBirth || null,
+        username: staffMember.staffId,
+        designation: staffMember.designation || (role === 'admin' ? 'System Administrator' : 'Warden / Rector'),
+        employmentType: staffMember.employmentType || 'Full-time',
+        joiningDate: staffMember.joiningDate || staffMember.createdAt,
+        assignedArea: staffMember.assignedArea || 'Hostel Block',
+        assignedBlock: staffMember.assignedBlock || null,
+        shift: staffMember.shift || 'Regular Shift',
+        emergencyContactName: staffMember.emergencyContactName || null,
+        emergencyRelationship: staffMember.relationship || null,
+        emergencyPhone: staffMember.emergencyPhone || null,
+        createdAt: staffMember.createdAt || createdAt,
+      };
+    } else {
+      // Fallback for seeded or standalone admin/rector accounts without staff row
+      const namePart = email.split('@')[0];
+      const displayName = namePart.charAt(0).toUpperCase() + namePart.slice(1);
+      const isAdm = role === 'admin';
+      profile = {
+        name: isAdm ? 'System Administrator' : displayName,
+        firstName: isAdm ? 'System' : displayName,
+        lastName: isAdm ? 'Administrator' : 'Rector',
+        username: isAdm ? 'ADMIN-SYS' : 'RECTOR-SYS',
+        designation: isAdm ? 'System Administrator' : 'Warden / Rector',
+        employmentType: isAdm ? 'Permanent / Global Admin' : 'Full-time',
+        joiningDate: createdAt || null,
+        assignedArea: isAdm ? 'Campus-Wide (All Blocks)' : 'Hostel Block',
+        assignedBlock: isAdm ? 'All Blocks' : 'Assigned Hostel Block',
+        shift: isAdm ? 'Administrative (24/7 Global Access)' : 'Regular Shift',
+        phone: null,
+        address: isAdm ? 'Central Administration Office, HostelSpace Campus' : 'Hostel Warden Office',
+        createdAt,
       };
     }
   }
@@ -66,6 +156,7 @@ export const me = asyncHandler(async (req, res) => {
       email,
       role,
       lastLoginAt,
+      createdAt,
       ...(profile || {}),
     },
   });

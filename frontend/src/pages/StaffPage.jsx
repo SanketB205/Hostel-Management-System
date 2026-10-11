@@ -70,6 +70,15 @@ export default function StaffPage() {
     });
   }, [staff, filters]);
 
+  // Derive unique filter options from real staff data
+  const designationOptions = useMemo(() => (
+    [...new Set(staff.map(s => s.designation).filter(Boolean))].sort()
+  ), [staff]);
+
+  const assignedBlockOptions = useMemo(() => (
+    [...new Set(staff.map(s => s.assignedBlock).filter(Boolean))].sort()
+  ), [staff]);
+
   const handleAddClick = () => {
     navigate('/staff/add');
   };
@@ -98,6 +107,8 @@ export default function StaffPage() {
             setFilters={setFilters} 
             onReset={handleResetFilters}
             onAddClick={handleAddClick}
+            designationOptions={designationOptions}
+            assignedBlockOptions={assignedBlockOptions}
           />
           
           <StaffTable staff={filteredStaff} />

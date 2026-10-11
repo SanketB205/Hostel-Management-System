@@ -1,8 +1,9 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Box, Typography, Button, Stack } from '@mui/material';
 import { ArrowRight } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import { hostel as hostelApi } from '../api';
 
 export default function WelcomeBanner() {
   const navigate = useNavigate();
@@ -10,6 +11,29 @@ export default function WelcomeBanner() {
   const email = user?.email || 'admin@example.com';
   const name = email.split('@')[0];
   const capitalizedName = name.charAt(0).toUpperCase() + name.slice(1);
+
+  const [stats, setStats] = useState({ pendingComplaints: null, availableRooms: null });
+
+  useEffect(() => {
+    if (!user) return;
+    hostelApi.getDashboardStats()
+      .then(res => {
+        const s = res.data?.stats || {};
+        setStats({
+          pendingComplaints: s.pendingComplaints ?? 0,
+          availableRooms: s.availableRooms ?? 0,
+        });
+      })
+      .catch(() => {});
+  }, [user]);
+
+  const isRector = user?.role === 'rector';
+  const subtitle = stats.pendingComplaints === null
+    ? "Here's what's happening with your hostel today."
+    : isRector
+      ? `Here's what's happening with your hostel today. You have ${stats.pendingComplaints} pending student complaint${stats.pendingComplaints !== 1 ? 's' : ''} and ${stats.availableRooms} room${stats.availableRooms !== 1 ? 's' : ''} available.`
+      : `Here's what's happening with your hostel today. You have ${stats.pendingComplaints} pending complaint${stats.pendingComplaints !== 1 ? 's' : ''} (students & rector) and ${stats.availableRooms} room${stats.availableRooms !== 1 ? 's' : ''} available.`;
+
   return (
     <Box
       sx={{
@@ -60,7 +84,7 @@ export default function WelcomeBanner() {
           Welcome back, {capitalizedName}
         </Typography>
         <Typography variant="body1" sx={{ color: 'rgba(255,255,255,0.8)', mb: 3, fontSize: '1.1rem' }}>
-          Here's what's happening with your hostel today. You have 5 pending complaints and 12 rooms available.
+          {subtitle}
         </Typography>
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
           <Button 

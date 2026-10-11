@@ -1,13 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import {
   Box, Typography, IconButton, Button,
   useTheme, styled, Card, CardContent,
-  Avatar, Chip, CircularProgress, Alert, Snackbar
+  Avatar, Chip, CircularProgress, Alert, Snackbar,
+  Modal, Backdrop, DialogTitle, DialogContent, DialogContentText, DialogActions
 } from '@mui/material';
 import {
   ArrowLeft, User, GraduationCap, Users,
-  Home, CreditCard, FileText, Edit, Printer, Download
+  Home, CreditCard, FileText, Edit, Printer, Download, Lock, Trash2
 } from 'lucide-react';
 import { staff as staffApi } from '../api';
 import { useAuth } from '../contexts/AuthContext';
@@ -106,14 +107,43 @@ function fmtDate(iso) {
 export default function ViewStaffDetailsPage() {
   const theme = useTheme();
   const navigate = useNavigate();
+  const location = useLocation();
   const { id } = useParams();
   const { user } = useAuth();
+  const isAdmin = user?.role === 'admin';
 
   const [staffMember, setStaffMember] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
   const [empModalOpen, setEmpModalOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  useEffect(() => {
+    if (deleteOpen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => { document.body.style.overflow = ''; };
+  }, [deleteOpen]);
+
+  const handleDeleteStaff = async () => {
+    setDeleting(true);
+    try {
+      const res = await staffApi.delete(id);
+      setSnackbar({ open: true, message: res.message || 'Staff member removed successfully.', severity: 'success' });
+      setTimeout(() => {
+        navigate('/staff');
+      }, 1500);
+    } catch (err) {
+      setSnackbar({ open: true, message: err.message || 'Failed to remove staff.', severity: 'error' });
+    } finally {
+      setDeleting(false);
+      setDeleteOpen(false);
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -130,7 +160,18 @@ export default function ViewStaffDetailsPage() {
       }
     })();
     return () => { cancelled = true; };
-  }, [id]);
+  }, [id, location.key]);
+
+  useEffect(() => {
+    if (location.state?.successMessage) {
+      setSnackbar({
+        open: true,
+        message: location.state.successMessage,
+        severity: 'success',
+      });
+      navigate(location.pathname, { replace: true, state: {} });
+    }
+  }, [location, navigate]);
 
   if (loading) {
     return (
@@ -144,7 +185,7 @@ export default function ViewStaffDetailsPage() {
     return (
       <Box sx={{ p: 4 }}>
         <Alert severity="error" sx={{ mb: 2 }}>{error || 'Staff member not found.'}</Alert>
-        <Button startIcon={<ArrowLeft size={18} />} onClick={() => navigate(-1)}>Go back</Button>
+        <Button startIcon={<ArrowLeft size={18} />} onClick={() => navigate('/staff')}>Go back</Button>
       </Box>
     );
   }
@@ -152,19 +193,43 @@ export default function ViewStaffDetailsPage() {
   const fullName = `${staffMember.firstName} ${staffMember.lastName}`;
 
   return (
-    <Box sx={{ animation: 'fadeIn 0.5s ease-out' }}>
+    <Box sx={{ animation: 'fadeIn 0.5s ease-out', pb: '80px' }}>
       <PageContainer>
 
         {/* Header */}
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 1 }}>
-          <IconButton onClick={() => navigate(-1)} sx={{ backgroundColor: 'action.hover' }}>
-            <ArrowLeft size={20} />
-          </IconButton>
-          <Box>
-            <Typography variant="h4" sx={{ fontWeight: 800, color: 'text.primary' }}>Staff Details</Typography>
-            <Typography variant="body1" sx={{ color: 'text.secondary', mt: 0.5 }}>
-              View complete information about the selected staff member.
-            </Typography>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: { xs: 'flex-start', sm: 'center' }, flexDirection: { xs: 'column', sm: 'row' }, gap: 2, mb: 1 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+            <IconButton onClick={() => navigate('/staff')} sx={{ backgroundColor: 'action.hover' }}>
+              <ArrowLeft size={20} />
+            </IconButton>
+            <Box>
+              <Typography variant="h4" sx={{ fontWeight: 800, color: 'text.primary' }}>Staff Details</Typography>
+              <Typography variant="body1" sx={{ color: 'text.secondary', mt: 0.5 }}>
+                View complete information about the selected staff member.
+              </Typography>
+            </Box>
+          </Box>
+
+          <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap', alignSelf: { xs: 'flex-start', sm: 'auto' } }}>
+            {isAdmin && (
+              <Button
+                variant="contained"
+                color="error"
+                startIcon={<Trash2 size={18} />}
+                onClick={() => setDeleteOpen(true)}
+                sx={{
+                  backgroundColor: '#DC2626',
+                  '&:hover': { backgroundColor: '#B91C1C' },
+                  borderRadius: '8px',
+                  textTransform: 'none',
+                  fontWeight: 600,
+                  px: 3,
+                  py: 1
+                }}
+              >
+                Remove Staff
+              </Button>
+            )}
           </Box>
         </Box>
 
@@ -233,6 +298,29 @@ export default function ViewStaffDetailsPage() {
               <InfoField label="Assigned Area" value={staffMember.assignedArea} />
               <InfoField label="Assigned Block" value={staffMember.assignedBlock} />
               <InfoField label="Shift" value={staffMember.shift} />
+              <Box sx={{ gridColumn: '1 / -1' }}>
+                <InfoField
+                  label="System Access"
+                  value={
+                    staffMember.user ? (
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
+                        <Chip
+                          label={staffMember.user.isActive ? 'Active (Rector)' : 'Disabled'}
+                          color={staffMember.user.isActive ? 'success' : 'default'}
+                          size="small"
+                          sx={{ fontWeight: 600 }}
+                        />
+                        <Typography variant="body2" sx={{ color: 'text.secondary', fontWeight: 500 }}>
+                          {staffMember.user.email}
+                        </Typography>
+                      </Box>
+                    ) : (
+                      <Chip label="No System Access" size="small" variant="outlined" sx={{ fontWeight: 500 }} />
+                    )
+                  }
+                  chip
+                />
+              </Box>
             </GridBox>
           </CardContent>
         </SectionCard>
@@ -288,22 +376,23 @@ export default function ViewStaffDetailsPage() {
 
       </PageContainer>
 
-      {/* Sticky footer actions */}
+      {/* Fixed bottom action bar */}
       <Box sx={{
-        p: 3, mt: 4,
-        mx: { xs: -2, sm: -3, md: -4 },
-        mb: { xs: -2, sm: -3, md: -4 },
+        py: 2,
+        px: { xs: 2, sm: 3, md: 4 },
         borderTop: `1px solid ${theme.palette.divider}`,
         display: 'flex', justifyContent: 'space-between', alignItems: 'center',
         backgroundColor: 'background.paper',
-        position: 'sticky',
-        bottom: { xs: -16, sm: -24, md: -32 },
+        position: 'fixed',
+        bottom: 0,
+        left: { xs: 0, md: '280px' },
+        right: 0,
         zIndex: 10,
         boxShadow: '0 -4px 12px rgba(0,0,0,0.05)',
       }}>
         <Button
           variant="text"
-          onClick={() => navigate(-1)}
+          onClick={() => navigate('/staff')}
           startIcon={<ArrowLeft size={18} />}
           sx={{ color: 'text.secondary', '&:hover': { color: 'text.primary', backgroundColor: 'action.hover' } }}
         >
@@ -311,6 +400,25 @@ export default function ViewStaffDetailsPage() {
         </Button>
 
         <Box sx={{ display: 'flex', gap: 2 }}>
+          {isAdmin && (
+            <Button
+              variant="contained"
+              color="error"
+              startIcon={<Trash2 size={18} />}
+              onClick={() => setDeleteOpen(true)}
+              sx={{
+                backgroundColor: '#DC2626',
+                '&:hover': { backgroundColor: '#B91C1C' },
+                borderRadius: '8px',
+                textTransform: 'none',
+                fontWeight: 600,
+                px: { xs: 2, sm: 3 },
+                py: 1,
+              }}
+            >
+              Remove Staff
+            </Button>
+          )}
           <Button
             variant="outlined"
             startIcon={<Printer size={18} />}
@@ -334,6 +442,7 @@ export default function ViewStaffDetailsPage() {
           <Button
             variant="contained"
             startIcon={<Edit size={18} />}
+            onClick={() => navigate(`/staff/edit/${staffMember.id}`)}
             sx={{
               backgroundColor: '#4F46E5', '&:hover': { backgroundColor: '#4338CA' },
               px: { xs: 2, sm: 4 }, py: 1, fontWeight: 600,
@@ -367,6 +476,97 @@ export default function ViewStaffDetailsPage() {
           });
         }}
       />
+
+      {/* Remove Staff Confirmation Modal Overlay */}
+      {isAdmin && (
+        <Modal
+          open={deleteOpen}
+          onClose={() => !deleting && setDeleteOpen(false)}
+          closeAfterTransition
+          disablePortal={false}
+          disableScrollLock={false}
+          keepMounted={false}
+          container={() => document.body}
+          slots={{ backdrop: Backdrop }}
+          slotProps={{
+            backdrop: {
+              timeout: 500,
+              sx: {
+                position: 'fixed',
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                width: '100vw',
+                height: '100vh',
+                backgroundColor: 'rgba(0, 0, 0, 0.75)',
+                backdropFilter: 'blur(8px)',
+                WebkitBackdropFilter: 'blur(8px)',
+                zIndex: 1400,
+              },
+            },
+          }}
+          sx={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            zIndex: 1400,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <Box
+            sx={{
+              position: 'relative',
+              width: { xs: '90%', sm: '450px' },
+              maxWidth: '95vw',
+              backgroundColor: 'background.paper',
+              borderRadius: '16px',
+              boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04)',
+              outline: 'none',
+              zIndex: 1401,
+              p: 1,
+            }}
+          >
+            <DialogTitle id="delete-dialog-title" sx={{ fontWeight: 700 }}>
+              Remove Staff Profile?
+            </DialogTitle>
+            <DialogContent>
+              <DialogContentText id="delete-dialog-description">
+                Are you sure you want to remove staff member <strong>{fullName}</strong> (Staff ID: {staffMember.staffId})? This action will delete their profile{staffMember.user ? ', delete their linked system login account,' : ''} and remove all staff records. This action cannot be undone.
+              </DialogContentText>
+            </DialogContent>
+            <DialogActions sx={{ px: 3, pb: 2 }}>
+              <Button 
+                onClick={() => setDeleteOpen(false)} 
+                disabled={deleting}
+                sx={{ textTransform: 'none', fontWeight: 600, color: 'text.secondary' }}
+              >
+                Cancel
+              </Button>
+              <Button 
+                onClick={handleDeleteStaff} 
+                disabled={deleting}
+                color="error" 
+                variant="contained" 
+                autoFocus
+                sx={{ 
+                  backgroundColor: '#DC2626', 
+                  '&:hover': { backgroundColor: '#B91C1C' },
+                  textTransform: 'none', 
+                  fontWeight: 600,
+                  boxShadow: 'none'
+                }}
+              >
+                {deleting ? 'Removing...' : 'Remove Staff'}
+              </Button>
+            </DialogActions>
+          </Box>
+        </Modal>
+      )}
     </Box>
   );
 }

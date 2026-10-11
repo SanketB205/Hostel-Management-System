@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useSearchParams } from 'react-router-dom';
 import { Box, Typography, Card, Divider, CircularProgress, Alert, Snackbar } from '@mui/material';
 import { useRoomContext } from '../contexts/RoomContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -14,16 +14,33 @@ import BulkRoomDrawer from '../components/rooms/BulkRoomDrawer';
 export default function RoomsPage() {
   const { user } = useAuth();
   const location = useLocation();
+  const [searchParams] = useSearchParams();
   const { blocks, loading, error, fetchBlocks, fetchBlockDetails } = useRoomContext();
   const isAdmin = user?.role === 'admin';
 
-  const [filters, setFilters] = useState({
+  const getInitialStatus = () => {
+    const s = searchParams.get('status');
+    if (s && ['Available', 'Occupied', 'Full', 'Maintenance', 'Reserved'].includes(s)) {
+      return s;
+    }
+    return 'All Status';
+  };
+
+  const [filters, setFilters] = useState(() => ({
     search: '',
     block: 'All Blocks',
     floor: 'All Floors',
     roomType: 'All Types',
-    status: 'All Status',
-  });
+    status: getInitialStatus(),
+  }));
+
+  // Sync with URL query parameter when navigating with different status
+  useEffect(() => {
+    const s = searchParams.get('status');
+    if (s && ['Available', 'Occupied', 'Full', 'Maintenance', 'Reserved'].includes(s)) {
+      setFilters(prev => ({ ...prev, status: s }));
+    }
+  }, [searchParams]);
 
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [isBulkDrawerOpen, setIsBulkDrawerOpen] = useState(false);

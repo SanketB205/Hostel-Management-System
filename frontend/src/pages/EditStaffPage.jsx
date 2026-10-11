@@ -1,0 +1,891 @@
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
+import {
+  Box, Typography, IconButton, Button, TextField, MenuItem,
+  useTheme, styled, CircularProgress, Card, CardContent, FormControlLabel, Switch, Snackbar, Alert
+} from '@mui/material';
+import {
+  ArrowLeft, Upload, CheckCircle2, User, Briefcase, Home, Users,
+  Lock, FileText, Save, RotateCcw, Eye, EyeOff
+} from 'lucide-react';
+import { useForm, Controller } from 'react-hook-form';
+import { yupResolver } from '@hookform/resolvers/yup';
+import * as yup from 'yup';
+import { LocalizationProvider, DatePicker } from '@mui/x-date-pickers';
+import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
+import { useRoomContext } from '../contexts/RoomContext';
+import { useAuth } from '../contexts/AuthContext';
+import { staff as staffApi } from '../api';
+import EmploymentManagementModal from '../components/staff/EmploymentManagementModal';
+import AssignmentManagementModal from '../components/staff/AssignmentManagementModal';
+import { useEmploymentData } from '../hooks/useEmploymentData';
+import { useAssignmentData } from '../hooks/useAssignmentData';
+import dayjs from 'dayjs';
+
+// ── Styled components (identical to StaffRegistrationPage.jsx) ────────────────
+
+const PageContainer = styled(Box)(({ theme }) => ({
+  display: 'flex',
+  flexDirection: 'column',
+  gap: theme.spacing(4),
+  maxWidth: '1200px',
+  margin: '0 auto',
+  width: '100%',
+}));
+
+const SectionCard = styled(Card)(() => ({
+  borderRadius: '16px',
+  boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
+  overflow: 'visible',
+}));
+
+const SectionHeaderBox = styled(Box)(({ theme }) => ({
+  display: 'flex',
+  alignItems: 'center',
+  gap: theme.spacing(1.5),
+  marginBottom: theme.spacing(3),
+}));
+
+const IconWrapper = styled(Box)(({ theme }) => ({
+  backgroundColor: theme.palette.primary.light + '20',
+  color: theme.palette.primary.main,
+  padding: theme.spacing(1),
+  borderRadius: '8px',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+}));
+
+const FileUploadBox = styled(Box)(({ theme }) => ({
+  border: `2px dashed ${theme.palette.divider}`,
+  borderRadius: theme.shape.borderRadius,
+  padding: theme.spacing(3),
+  textAlign: 'center',
+  cursor: 'pointer',
+  transition: 'all 0.2s ease',
+  backgroundColor: theme.palette.background.default,
+  height: '100%',
+  display: 'flex',
+  flexDirection: 'column',
+  alignItems: 'center',
+  justifyContent: 'center',
+  '&:hover': {
+    borderColor: theme.palette.primary.main,
+    backgroundColor: theme.palette.action.hover,
+  }
+}));
+
+const GridBox = styled(Box)(({ theme }) => ({
+  display: 'grid',
+  gap: theme.spacing(3),
+  gridTemplateColumns: 'repeat(1, 1fr)',
+  [theme.breakpoints.up('sm')]: {
+    gridTemplateColumns: 'repeat(2, 1fr)',
+  }
+}));
+
+// Validation Schema Generator
+function buildEditSchema(hasExistingAccount) {
+  return yup.object().shape({
+    firstName: yup.string().required('First name is required'),
+    lastName: yup.string().required('Last name is required'),
+    gender: yup.string().required('Gender is required'),
+    dob: yup.date().nullable().typeError('Invalid date').required('Date of birth is required'),
+    phone: yup.string()
+      .matches(/^[0-9+\-\s()]{10,15}$/, 'Invalid phone number format')
+      .required('Phone number is required'),
+    email: yup.string().email('Invalid email address').required('Email is required'),
+    address: yup.string().required('Address is required'),
+    
+    staffId: yup.string().required('Staff ID is required'),
+    designation: yup.string().required('Designation is required'),
+    joiningDate: yup.date().nullable().typeError('Invalid date').required('Joining date is required'),
+    employmentType: yup.string().required('Employment type is required'),
+    
+    assignedArea: yup.string().required('Assigned area is required'),
+    assignedBlock: yup.string().when('assignedArea', {
+      is: 'Hostel Block',
+      then: (s) => s.required('Assigned block is required'),
+      otherwise: (s) => s.nullable().notRequired()
+    }),
+    shift: yup.string().required('Shift is required'),
+    
+    emergencyContactName: yup.string().required('Emergency contact name is required'),
+    relationship: yup.string().required('Relationship is required'),
+    emergencyPhone: yup.string()
+      .matches(/^[0-9+\-\s()]{10,15}$/, 'Invalid phone number format')
+      .required('Emergency phone number is required'),
+    
+    provideSystemAccess: yup.boolean().default(false),
+    loginEmail: yup.string().when('provideSystemAccess', {
+      is: true,
+      then: (s) => s
+        .required('Login email is required')
+        .email('Please enter a valid email address'),
+      otherwise: (s) => s.nullable().notRequired()
+    }),
+    password: yup.string().when('provideSystemAccess', {
+      is: true,
+      then: (s) => {
+        if (hasExistingAccount) {
+          // Optional when editing an existing account
+          return s.nullable().notRequired().test(
+            'min-if-present',
+            'Password must be at least 6 characters long',
+            (val) => !val || val.length >= 6
+          );
+        }
+        return s.required('Password is required').min(6, 'Password must be at least 6 characters long');
+      },
+      otherwise: (s) => s.nullable().notRequired()
+    }),
+    confirmPassword: yup.string().when(['provideSystemAccess', 'password'], {
+      is: (provideAccess, pwd) => {
+        if (!provideAccess) return false;
+        if (hasExistingAccount) return Boolean(pwd && pwd.length > 0);
+        return true;
+      },
+      then: (s) => s
+        .required('Confirm password is required')
+        .oneOf([yup.ref('password')], 'Passwords must match'),
+      otherwise: (s) => s.nullable().notRequired()
+    })
+  });
+}
+
+export default function EditStaffPage() {
+  const theme = useTheme();
+  const navigate = useNavigate();
+  const { id } = useParams();
+  const { user } = useAuth();
+
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
+  const [staffRecord, setStaffRecord] = useState(null);
+  const [hasExistingAccount, setHasExistingAccount] = useState(false);
+
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [uploadedFiles, setUploadedFiles] = useState({});
+  const [photoPreview, setPhotoPreview] = useState(null);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
+  const [empModalOpen, setEmpModalOpen] = useState(false);
+  const [assignmentModalOpen, setAssignmentModalOpen] = useState(false);
+
+  // Dynamic schema based on whether user has an existing account
+  const validationSchema = useMemo(() => buildEditSchema(hasExistingAccount), [hasExistingAccount]);
+
+  const { control, handleSubmit, reset, watch, setValue, formState: { errors } } = useForm({
+    resolver: yupResolver(validationSchema),
+    defaultValues: {
+      firstName: '', lastName: '', gender: '', dob: null, email: '', phone: '', address: '',
+      staffId: '', designation: '', joiningDate: null, employmentType: '',
+      assignedArea: '', assignedBlock: '', shift: '',
+      emergencyContactName: '', relationship: '', emergencyPhone: '',
+      provideSystemAccess: false, loginEmail: '', password: '', confirmPassword: ''
+    }
+  });
+
+  const watchAssignedArea = watch('assignedArea');
+  const watchProvideSystemAccess = watch('provideSystemAccess');
+
+  // Custom hooks for dynamic dropdown data
+  const { activeDesignations, activeEmploymentTypes } = useEmploymentData();
+  const { activeAssignedAreas, activeShifts } = useAssignmentData();
+  const { blocks: mockBlocks } = useRoomContext();
+
+  // Populate form with staff member data
+  const populateFormData = useCallback((staffData) => {
+    const accountExists = Boolean(staffData.user || staffData.userId);
+    setHasExistingAccount(accountExists);
+
+    const initialValues = {
+      firstName: staffData.firstName || '',
+      lastName: staffData.lastName || '',
+      gender: staffData.gender || '',
+      dob: staffData.dateOfBirth ? dayjs(staffData.dateOfBirth) : null,
+      phone: staffData.phone || '',
+      email: staffData.email || '',
+      address: staffData.address || '',
+      staffId: staffData.staffId || '',
+      designation: staffData.designation || '',
+      joiningDate: staffData.joiningDate ? dayjs(staffData.joiningDate) : null,
+      employmentType: staffData.employmentType || '',
+      assignedArea: staffData.assignedArea || '',
+      assignedBlock: staffData.assignedBlock || '',
+      shift: staffData.shift || '',
+      emergencyContactName: staffData.emergencyContactName || '',
+      relationship: staffData.relationship || '',
+      emergencyPhone: staffData.emergencyPhone || '',
+      provideSystemAccess: Boolean(accountExists && staffData.user?.isActive !== false),
+      loginEmail: staffData.user?.email || '',
+      password: '',
+      confirmPassword: '',
+    };
+
+    reset(initialValues);
+    setUploadedFiles(staffData.uploadedFiles || {});
+  }, [reset]);
+
+  // Fetch staff record on mount
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      setLoadError(null);
+      try {
+        const res = await staffApi.getById(id);
+        const data = res.data;
+        if (!data) throw new Error('Staff member not found.');
+        if (!cancelled) {
+          setStaffRecord(data);
+          populateFormData(data);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setLoadError(err.message || 'Failed to load staff details.');
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [id, populateFormData]);
+
+  const handleFileUpload = (fieldName) => (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      setUploadedFiles(prev => ({ ...prev, [fieldName]: file.name }));
+      if (fieldName === 'Photo') {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          setPhotoPreview(reader.result);
+        };
+        reader.readAsDataURL(file);
+      }
+    }
+  };
+
+  const handleReset = () => {
+    if (staffRecord) {
+      populateFormData(staffRecord);
+      setPhotoPreview(null);
+      setSnackbar({ open: true, message: 'Form values restored to last saved state.', severity: 'info' });
+    }
+  };
+
+  const onSubmit = async (data) => {
+    setIsSubmitting(true);
+
+    try {
+      // Format Dates
+      const dobFormatted = data.dob ? dayjs(data.dob).format('YYYY-MM-DD') : '';
+      const joiningDateFormatted = data.joiningDate ? dayjs(data.joiningDate).format('YYYY-MM-DD') : '';
+
+      // Determine Assigned Block
+      const assignedBlockVal = data.assignedArea === 'Hostel Block' ? data.assignedBlock : data.assignedArea;
+
+      const payload = {
+        staffId: data.staffId,
+        firstName: data.firstName,
+        lastName: data.lastName,
+        gender: data.gender,
+        dateOfBirth: dobFormatted,
+        email: data.email.trim().toLowerCase(),
+        phone: data.phone,
+        address: data.address,
+        designation: data.designation,
+        joiningDate: joiningDateFormatted,
+        employmentType: data.employmentType,
+        assignedArea: data.assignedArea,
+        assignedBlock: assignedBlockVal,
+        shift: data.shift,
+        emergencyContactName: data.emergencyContactName,
+        relationship: data.relationship,
+        emergencyPhone: data.emergencyPhone,
+        provideSystemAccess: Boolean(data.provideSystemAccess),
+        loginEmail: data.provideSystemAccess ? data.loginEmail.trim().toLowerCase() : undefined,
+        password: data.provideSystemAccess && data.password ? data.password : undefined,
+        confirmPassword: data.provideSystemAccess && data.confirmPassword ? data.confirmPassword : undefined,
+        uploadedFiles,
+      };
+
+      const res = await staffApi.update(id, payload);
+
+      const successMsg = res.message || 'Staff profile updated successfully.';
+
+      // Navigate back to Staff Details page with success state
+      navigate(`/staff/${id}`, {
+        state: { successMessage: successMsg }
+      });
+    } catch (error) {
+      setSnackbar({ open: true, message: error.message || 'Failed to update staff profile.', severity: 'error' });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const blocksList = mockBlocks && mockBlocks.length > 0 ? mockBlocks : [{ name: 'Block A' }, { name: 'Block B' }, { name: 'Block C' }];
+
+  if (loading) {
+    return (
+      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 400 }}>
+        <CircularProgress size={48} sx={{ color: '#6366F1' }} />
+      </Box>
+    );
+  }
+
+  if (loadError || !staffRecord) {
+    return (
+      <Box sx={{ p: 4, maxWidth: 600, mx: 'auto' }}>
+        <Alert severity="error" sx={{ mb: 3 }}>
+          {loadError || 'Staff member not found.'}
+        </Alert>
+        <Button
+          variant="outlined"
+          startIcon={<ArrowLeft size={18} />}
+          onClick={() => navigate('/staff')}
+        >
+          Back to Staff Directory
+        </Button>
+      </Box>
+    );
+  }
+
+  const staffDisplayName = `${staffRecord.firstName} ${staffRecord.lastName}`;
+
+  return (
+    <Box sx={{ animation: 'fadeIn 0.5s ease-out', pb: '80px' }}>
+      <PageContainer>
+        {/* Header */}
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 1 }}>
+          <IconButton onClick={() => navigate(`/staff/${id}`)} sx={{ backgroundColor: 'action.hover' }}>
+            <ArrowLeft size={20} />
+          </IconButton>
+          <Box>
+            <Typography variant="h4" sx={{ fontWeight: 800, color: 'text.primary' }}>
+              Edit Staff Profile
+            </Typography>
+            <Typography variant="body1" sx={{ color: 'text.secondary', mt: 0.5 }}>
+              Updating profile for {staffDisplayName} ({staffRecord.staffId})
+            </Typography>
+          </Box>
+        </Box>
+
+        <LocalizationProvider dateAdapter={AdapterDayjs}>
+          {/* SECTION 1 — PERSONAL INFORMATION */}
+          <SectionCard>
+            <CardContent sx={{ p: { xs: 2, sm: 4 } }}>
+              <SectionHeaderBox>
+                <IconWrapper><User size={24} /></IconWrapper>
+                <Typography variant="h6" sx={{ fontWeight: 700 }}>Personal Information</Typography>
+              </SectionHeaderBox>
+              <GridBox sx={{ gap: 3 }}>
+                <Controller name="firstName" control={control} render={({ field }) => (
+                  <TextField {...field} fullWidth label="First Name *" error={!!errors.firstName} helperText={errors.firstName?.message} />
+                )} />
+                <Controller name="lastName" control={control} render={({ field }) => (
+                  <TextField {...field} fullWidth label="Last Name *" error={!!errors.lastName} helperText={errors.lastName?.message} />
+                )} />
+                <Controller name="gender" control={control} render={({ field }) => (
+                  <TextField {...field} select fullWidth label="Gender *" error={!!errors.gender} helperText={errors.gender?.message}>
+                    <MenuItem value="Male">Male</MenuItem>
+                    <MenuItem value="Female">Female</MenuItem>
+                    <MenuItem value="Other">Other</MenuItem>
+                  </TextField>
+                )} />
+                <Controller name="dob" control={control} render={({ field }) => (
+                  <DatePicker
+                    label="Date of Birth *"
+                    value={field.value}
+                    onChange={(newValue) => field.onChange(newValue)}
+                    slotProps={{ textField: { fullWidth: true, error: !!errors.dob, helperText: errors.dob?.message } }}
+                  />
+                )} />
+                <Controller name="phone" control={control} render={({ field }) => (
+                  <TextField {...field} fullWidth label="Phone Number *" error={!!errors.phone} helperText={errors.phone?.message} />
+                )} />
+                <Controller name="email" control={control} render={({ field }) => (
+                  <TextField {...field} fullWidth label="Email Address *" error={!!errors.email} helperText={errors.email?.message} />
+                )} />
+                <Box sx={{ gridColumn: { sm: '1 / -1' } }}>
+                  <Controller name="address" control={control} render={({ field }) => (
+                    <TextField {...field} fullWidth label="Address *" error={!!errors.address} helperText={errors.address?.message} />
+                  )} />
+                </Box>
+              </GridBox>
+            </CardContent>
+          </SectionCard>
+
+          {/* SECTION 2 — EMPLOYMENT INFORMATION */}
+          <SectionCard>
+            <CardContent sx={{ p: { xs: 2, sm: 4 } }}>
+              <SectionHeaderBox>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flex: 1 }}>
+                  <IconWrapper><Briefcase size={24} /></IconWrapper>
+                  <Typography variant="h6" sx={{ fontWeight: 700 }}>Employment Information</Typography>
+                </Box>
+                {user?.role === 'admin' && (
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    onClick={() => setEmpModalOpen(true)}
+                    sx={{
+                      textTransform: 'none',
+                      borderRadius: '8px',
+                      borderColor: '#4F46E5',
+                      color: '#4F46E5',
+                      fontWeight: 600,
+                      fontSize: '0.8125rem',
+                      px: 2,
+                      '&:hover': {
+                        backgroundColor: 'rgba(79, 70, 229, 0.04)',
+                        borderColor: '#4338CA',
+                      },
+                    }}
+                  >
+                    Manage Employment Info
+                  </Button>
+                )}
+              </SectionHeaderBox>
+              <GridBox sx={{ gap: 3 }}>
+                <Controller name="staffId" control={control} render={({ field }) => (
+                  <TextField 
+                    {...field} 
+                    fullWidth 
+                    label="Staff ID *" 
+                    disabled
+                    slotProps={{ 
+                      input: { 
+                        readOnly: true 
+                      } 
+                    }} 
+                    error={!!errors.staffId} 
+                    helperText={errors.staffId?.message || 'Staff ID cannot be changed'}
+                    sx={{
+                      '& .MuiInputBase-input.Mui-disabled': {
+                        WebkitTextFillColor: 'rgba(0, 0, 0, 0.6)',
+                        cursor: 'not-allowed',
+                      }
+                    }}
+                  />
+                )} />
+                <Controller name="designation" control={control} render={({ field }) => (
+                  <TextField {...field} select fullWidth label="Designation *" error={!!errors.designation} helperText={errors.designation?.message}>
+                    {activeDesignations.map((designation) => (
+                      <MenuItem key={designation.id} value={designation.name}>
+                        {designation.name}
+                      </MenuItem>
+                    ))}
+                  </TextField>
+                )} />
+                <Controller name="joiningDate" control={control} render={({ field }) => (
+                  <DatePicker
+                    label="Joining Date *"
+                    value={field.value}
+                    onChange={(newValue) => field.onChange(newValue)}
+                    slotProps={{ textField: { fullWidth: true, error: !!errors.joiningDate, helperText: errors.joiningDate?.message } }}
+                  />
+                )} />
+                <Controller name="employmentType" control={control} render={({ field }) => (
+                  <TextField {...field} select fullWidth label="Employment Type *" error={!!errors.employmentType} helperText={errors.employmentType?.message}>
+                    {activeEmploymentTypes.map((type) => (
+                      <MenuItem key={type.id} value={type.name}>
+                        {type.name}
+                      </MenuItem>
+                    ))}
+                  </TextField>
+                )} />
+              </GridBox>
+            </CardContent>
+          </SectionCard>
+
+          {/* SECTION 3 — HOSTEL ASSIGNMENT */}
+          <SectionCard>
+            <CardContent sx={{ p: { xs: 2, sm: 4 } }}>
+              <SectionHeaderBox>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flex: 1 }}>
+                  <IconWrapper><Home size={24} /></IconWrapper>
+                  <Typography variant="h6" sx={{ fontWeight: 700 }}>Hostel Assignment</Typography>
+                </Box>
+                {user?.role === 'admin' && (
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    onClick={() => setAssignmentModalOpen(true)}
+                    sx={{
+                      textTransform: 'none',
+                      borderRadius: '8px',
+                      borderColor: '#4F46E5',
+                      color: '#4F46E5',
+                      fontWeight: 600,
+                      fontSize: '0.8125rem',
+                      px: 2,
+                      '&:hover': {
+                        backgroundColor: 'rgba(79, 70, 229, 0.04)',
+                        borderColor: '#4338CA',
+                      },
+                    }}
+                  >
+                    Manage Assignment
+                  </Button>
+                )}
+              </SectionHeaderBox>
+              <GridBox sx={{ gap: 3 }}>
+                <Controller name="assignedArea" control={control} render={({ field }) => (
+                  <TextField 
+                    {...field} 
+                    select 
+                    fullWidth 
+                    label="Assigned Area *" 
+                    error={!!errors.assignedArea} 
+                    helperText={errors.assignedArea?.message}
+                    onChange={(e) => {
+                      field.onChange(e);
+                      if (e.target.value !== 'Hostel Block') {
+                        setValue('assignedBlock', '');
+                      }
+                    }}
+                  >
+                    {activeAssignedAreas.map((area) => (
+                      <MenuItem key={area.id} value={area.name}>
+                        {area.name}
+                      </MenuItem>
+                    ))}
+                  </TextField>
+                )} />
+
+                {watchAssignedArea === 'Hostel Block' && (
+                  <Controller name="assignedBlock" control={control} render={({ field }) => (
+                    <TextField {...field} select fullWidth label="Assigned Block *" error={!!errors.assignedBlock} helperText={errors.assignedBlock?.message}>
+                      {blocksList.map(block => (
+                        <MenuItem key={block.name} value={block.name}>{block.name}</MenuItem>
+                      ))}
+                    </TextField>
+                  )} />
+                )}
+
+                <Controller name="shift" control={control} render={({ field }) => (
+                  <TextField {...field} select fullWidth label="Shift *" error={!!errors.shift} helperText={errors.shift?.message}>
+                    {activeShifts.map((shift) => (
+                      <MenuItem key={shift.id} value={shift.name}>
+                        {shift.name}
+                      </MenuItem>
+                    ))}
+                  </TextField>
+                )} />
+              </GridBox>
+            </CardContent>
+          </SectionCard>
+
+          {/* SECTION 4 — EMERGENCY CONTACT */}
+          <SectionCard>
+            <CardContent sx={{ p: { xs: 2, sm: 4 } }}>
+              <SectionHeaderBox>
+                <IconWrapper><Users size={24} /></IconWrapper>
+                <Typography variant="h6" sx={{ fontWeight: 700 }}>Emergency Contact Information</Typography>
+              </SectionHeaderBox>
+              <GridBox sx={{ gap: 3 }}>
+                <Controller name="emergencyContactName" control={control} render={({ field }) => (
+                  <TextField {...field} fullWidth label="Emergency Contact Name *" error={!!errors.emergencyContactName} helperText={errors.emergencyContactName?.message} />
+                )} />
+                <Controller name="relationship" control={control} render={({ field }) => (
+                  <TextField {...field} select fullWidth label="Relationship *" error={!!errors.relationship} helperText={errors.relationship?.message}>
+                    <MenuItem value="Parent">Parent</MenuItem>
+                    <MenuItem value="Spouse">Spouse</MenuItem>
+                    <MenuItem value="Sibling">Sibling</MenuItem>
+                    <MenuItem value="Relative">Relative</MenuItem>
+                    <MenuItem value="Guardian">Guardian</MenuItem>
+                    <MenuItem value="Other">Other</MenuItem>
+                  </TextField>
+                )} />
+                <Controller name="emergencyPhone" control={control} render={({ field }) => (
+                  <TextField {...field} fullWidth label="Emergency Phone Number *" error={!!errors.emergencyPhone} helperText={errors.emergencyPhone?.message} />
+                )} />
+              </GridBox>
+            </CardContent>
+          </SectionCard>
+
+          {/* SECTION 5 — SYSTEM ACCESS */}
+          <SectionCard>
+            <CardContent sx={{ p: { xs: 2, sm: 4 } }}>
+              <SectionHeaderBox>
+                <IconWrapper><Lock size={24} /></IconWrapper>
+                <Box>
+                  <Typography variant="h6" sx={{ fontWeight: 700 }}>System Access</Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    Configure application login access for this staff member
+                  </Typography>
+                </Box>
+              </SectionHeaderBox>
+              <Box sx={{ mb: watchProvideSystemAccess ? 3 : 0 }}>
+                <Controller
+                  name="provideSystemAccess"
+                  control={control}
+                  render={({ field }) => (
+                    <Box>
+                      <FormControlLabel
+                        control={
+                          <Switch
+                            checked={Boolean(field.value)}
+                            onChange={(e) => {
+                              const isChecked = e.target.checked;
+                              field.onChange(isChecked);
+                              if (!isChecked) {
+                                setValue('password', '');
+                                setValue('confirmPassword', '');
+                              }
+                            }}
+                            color="primary"
+                          />
+                        }
+                        label={
+                          <Typography variant="body1" sx={{ fontWeight: 600 }}>
+                            Provide System Access
+                          </Typography>
+                        }
+                      />
+                      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', ml: 4.5, mt: -0.5 }}>
+                        Enable this option to create login credentials and grant authorized system access.
+                      </Typography>
+                      {hasExistingAccount && !watchProvideSystemAccess && (
+                        <Alert severity="warning" sx={{ mt: 2, borderRadius: '8px' }}>
+                          Disabling system access will deactivate this staff member's login credentials. Their historical records will be preserved.
+                        </Alert>
+                      )}
+                    </Box>
+                  )}
+                />
+              </Box>
+
+              {watchProvideSystemAccess && (
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, pt: 1, animation: 'fadeIn 0.3s ease-out' }}>
+                  <GridBox>
+                    <Controller
+                      name="loginEmail"
+                      control={control}
+                      render={({ field }) => (
+                        <TextField
+                          {...field}
+                          fullWidth
+                          label="Login Email *"
+                          type="email"
+                          placeholder="rector@example.com"
+                          error={!!errors.loginEmail}
+                          helperText={errors.loginEmail?.message || 'Email used for logging into the portal'}
+                        />
+                      )}
+                    />
+                    <Controller
+                      name="password"
+                      control={control}
+                      render={({ field }) => (
+                        <TextField
+                          {...field}
+                          type={showPassword ? 'text' : 'password'}
+                          fullWidth
+                          label={hasExistingAccount ? 'New Password (Optional)' : 'Password *'}
+                          placeholder={hasExistingAccount ? 'Leave blank to keep existing password' : ''}
+                          error={!!errors.password}
+                          helperText={errors.password?.message || (hasExistingAccount ? 'Leave blank to keep current password' : 'Minimum 6 characters')}
+                          slotProps={{
+                            input: {
+                              endAdornment: (
+                                <IconButton
+                                  onClick={() => setShowPassword(!showPassword)}
+                                  edge="end"
+                                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                                >
+                                  {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                                </IconButton>
+                              )
+                            }
+                          }}
+                        />
+                      )}
+                    />
+                  </GridBox>
+                  <Box sx={{ width: { xs: '100%', sm: '50%' }, pr: { sm: 1.5 } }}>
+                    <Controller
+                      name="confirmPassword"
+                      control={control}
+                      render={({ field }) => (
+                        <TextField
+                          {...field}
+                          type={showConfirmPassword ? 'text' : 'password'}
+                          fullWidth
+                          label={hasExistingAccount ? 'Confirm New Password' : 'Confirm Password *'}
+                          placeholder={hasExistingAccount ? 'Leave blank if not changing password' : ''}
+                          error={!!errors.confirmPassword}
+                          helperText={errors.confirmPassword?.message || 'Must match password exactly'}
+                          slotProps={{
+                            input: {
+                              endAdornment: (
+                                <IconButton
+                                  onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                                  edge="end"
+                                  aria-label={showConfirmPassword ? 'Hide confirm password' : 'Show confirm password'}
+                                >
+                                  {showConfirmPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                                </IconButton>
+                              )
+                            }
+                          }}
+                        />
+                      )}
+                    />
+                  </Box>
+                </Box>
+              )}
+            </CardContent>
+          </SectionCard>
+
+          {/* SECTION 6 — DOCUMENTS UPLOAD */}
+          <SectionCard>
+            <CardContent sx={{ p: { xs: 2, sm: 4 } }}>
+              <SectionHeaderBox>
+                <IconWrapper><FileText size={24} /></IconWrapper>
+                <Typography variant="h6" sx={{ fontWeight: 700 }}>Documents Upload</Typography>
+              </SectionHeaderBox>
+              <Typography variant="body2" sx={{ color: 'text.secondary', mb: 3 }}>
+                Please upload clear copies of the following documents. Supported formats: JPG, PNG, PDF.
+              </Typography>
+              <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)' }, gap: 3 }}>
+                {['Photo', 'ID Proof'].map((doc) => (
+                  <Box key={doc}>
+                    <input
+                      accept="image/*,.pdf"
+                      style={{ display: 'none' }}
+                      id={`upload-${doc}`}
+                      type="file"
+                      onChange={handleFileUpload(doc)}
+                    />
+                    <label htmlFor={`upload-${doc}`} style={{ display: 'block', height: '100%' }}>
+                      <FileUploadBox>
+                        {uploadedFiles[doc] ? (
+                          <>
+                            {doc === 'Photo' && photoPreview ? (
+                              <img src={photoPreview} alt="Profile Preview" style={{ width: 64, height: 64, borderRadius: '50%', objectFit: 'cover', marginBottom: 12 }} />
+                            ) : (
+                              <CheckCircle2 color={theme.palette.success.main} size={32} style={{ marginBottom: 12 }} />
+                            )}
+                            <Typography variant="body2" noWrap sx={{ maxWidth: '100%', fontWeight: 600 }} color="textPrimary">
+                              {uploadedFiles[doc]}
+                            </Typography>
+                          </>
+                        ) : (
+                          <>
+                            <Upload color={theme.palette.primary.main} size={32} style={{ marginBottom: 12 }} />
+                            <Typography variant="subtitle2" color="textPrimary" sx={{ mb: 0.5 }}>
+                              Upload {doc}
+                            </Typography>
+                            <Typography variant="caption" color="textSecondary">
+                              Click to upload
+                            </Typography>
+                          </>
+                        )}
+                      </FileUploadBox>
+                    </label>
+                  </Box>
+                ))}
+              </Box>
+            </CardContent>
+          </SectionCard>
+        </LocalizationProvider>
+      </PageContainer>
+
+      {/* BOTTOM FIXED ACTION BAR */}
+      <Box sx={{
+        py: 2,
+        px: { xs: 2, sm: 3, md: 4 },
+        borderTop: `1px solid ${theme.palette.divider}`,
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+        backgroundColor: 'background.paper',
+        position: 'fixed',
+        bottom: 0,
+        left: { xs: 0, md: '280px' },
+        right: 0,
+        zIndex: 10,
+        boxShadow: '0 -4px 12px rgba(0,0,0,0.05)',
+      }}>
+        <Button
+          variant="text"
+          onClick={handleReset}
+          disabled={isSubmitting}
+          startIcon={<RotateCcw size={18} />}
+          sx={{ color: 'text.secondary', '&:hover': { color: 'text.primary', backgroundColor: 'action.hover' } }}
+        >
+          Reset
+        </Button>
+
+        <Box sx={{ display: 'flex', gap: 2 }}>
+          <Button
+            variant="outlined"
+            onClick={() => navigate(`/staff/${id}`)}
+            disabled={isSubmitting}
+            sx={{
+              px: 3, py: 1,
+              color: 'text.primary',
+              borderColor: theme.palette.mode === 'light' ? '#D1D5DB' : 'divider',
+              '&:hover': { backgroundColor: 'action.hover', borderColor: 'text.primary' }
+            }}
+          >
+            Cancel
+          </Button>
+          <Button
+            variant="contained"
+            onClick={handleSubmit(onSubmit)}
+            disabled={isSubmitting}
+            startIcon={isSubmitting ? <CircularProgress size={20} color="inherit" /> : <Save size={18} />}
+            sx={{
+              backgroundColor: '#4F46E5', '&:hover': { backgroundColor: '#4338CA' },
+              px: 4, py: 1, fontWeight: 600,
+            }}
+          >
+            {isSubmitting ? 'Saving...' : 'Save Changes'}
+          </Button>
+        </Box>
+      </Box>
+
+      <Snackbar
+        open={snackbar.open}
+        autoHideDuration={6000}
+        onClose={() => setSnackbar(s => ({ ...s, open: false }))}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
+        <Alert severity={snackbar.severity} sx={{ width: '100%' }} onClose={() => setSnackbar(s => ({ ...s, open: false }))}>
+          {snackbar.message}
+        </Alert>
+      </Snackbar>
+
+      {/* Employment Management Modal */}
+      <EmploymentManagementModal
+        open={empModalOpen}
+        onClose={() => setEmpModalOpen(false)}
+        onUpdated={() => {
+          setSnackbar({
+            open: true,
+            message: 'Employment information updated successfully',
+            severity: 'success'
+          });
+        }}
+      />
+
+      {/* Assignment Management Modal */}
+      <AssignmentManagementModal
+        open={assignmentModalOpen}
+        onClose={() => setAssignmentModalOpen(false)}
+        onUpdated={() => {
+          setSnackbar({
+            open: true,
+            message: 'Assignment information updated successfully',
+            severity: 'success'
+          });
+        }}
+      />
+    </Box>
+  );
+}

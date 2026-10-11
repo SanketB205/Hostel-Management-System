@@ -26,7 +26,6 @@ import {
   ShieldCheck,
   Smartphone,
   Sun,
-  UserRound,
   UsersRound,
 } from 'lucide-react';
 import { ColorModeContext } from '../contexts/ThemeContext';
@@ -164,7 +163,6 @@ export default function SettingsPage() {
                   </Box>
                 </Box>
               </Box>
-              <Button variant="contained" startIcon={<UserRound size={18} />}>Edit Profile</Button>
             </Box>
           </Card>
         </Grid>

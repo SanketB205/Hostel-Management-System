@@ -1,158 +1,219 @@
 import React, { useState, useEffect } from 'react';
-import { Box, Card, Typography } from '@mui/material';
-import { Users, Bed, CheckCircle, Clock, UserCheck, TrendingUp, TrendingDown } from 'lucide-react';
+import { Box, Card, Typography, Skeleton, Tooltip } from '@mui/material';
+import { Users, Bed, CheckCircle, Clock, UserCheck, TrendingUp, TrendingDown, ArrowUpRight } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { complaints } from '../api';
+import { hostel as hostelApi } from '../api';
 
-const STATS = [
+const STAT_CONFIG = [
   {
+    key: 'totalStudents',
     title: 'Total Students',
-    value: '820',
-    trend: '+12%',
-    isPositive: true,
+    path: '/students',
     icon: Users,
-    color: '#4F46E5', // Indigo
+    color: '#4F46E5',
     bgColor: 'rgba(79, 70, 229, 0.1)',
+    isPositive: true,
+    tooltip: 'View all registered students',
   },
   {
+    key: 'occupiedRooms',
     title: 'Occupied Rooms',
-    value: '240',
-    trend: '+5%',
-    isPositive: true,
+    path: '/rooms?status=Occupied',
     icon: Bed,
-    color: '#F59E0B', // Warning/Orange
+    color: '#F59E0B',
     bgColor: 'rgba(245, 158, 11, 0.1)',
-  },
-  {
-    title: 'Available Rooms',
-    value: '12',
-    trend: '-2%',
-    isPositive: false,
-    icon: CheckCircle,
-    color: '#22C55E', // Success/Green
-    bgColor: 'rgba(34, 197, 94, 0.1)',
-  },
-  {
-    title: 'Pending Complaints',
-    value: '5',
-    trend: '-18%',
-    isPositive: true, // fewer complaints is good
-    icon: Clock,
-    color: '#EF4444', // Danger/Red
-    bgColor: 'rgba(239, 68, 68, 0.1)',
-  },
-  {
-    title: 'Total Staff',
-    value: '45',
-    trend: '0%',
     isPositive: true,
+    tooltip: 'View occupied rooms',
+  },
+  {
+    key: 'availableRooms',
+    title: 'Available Rooms',
+    path: '/rooms?status=Available',
+    icon: CheckCircle,
+    color: '#22C55E',
+    bgColor: 'rgba(34, 197, 94, 0.1)',
+    isPositive: true,
+    tooltip: 'View available rooms',
+  },
+  {
+    key: 'pendingComplaints',
+    title: 'Pending Complaints',
+    path: '/complaints?status=Pending',
+    icon: Clock,
+    color: '#EF4444',
+    bgColor: 'rgba(239, 68, 68, 0.1)',
+    isPositive: false,
+    tooltip: 'Review pending complaints',
+  },
+  {
+    key: 'totalStaff',
+    title: 'Total Staff',
+    path: '/staff',
     icon: UserCheck,
-    color: '#8B5CF6', // Accent/Purple
+    color: '#8B5CF6',
     bgColor: 'rgba(139, 92, 246, 0.1)',
+    isPositive: true,
+    adminOnly: true,
+    tooltip: 'Manage hostel staff',
   },
 ];
 
 export default function StatCards() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const isAdmin = user?.role === 'admin';
-  const [pendingComplaints, setPendingComplaints] = useState(5);
 
-  const displayStats = React.useMemo(() => {
-    if (isAdmin) return STATS;
-    return STATS.filter(s => s.title !== 'Total Staff');
-  }, [isAdmin]);
+  const [stats, setStats] = useState(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (!user) return;
-    const fetchCount = async () => {
-      try {
-        let count = 0;
-        if (user.role === 'student') {
-          const res = await complaints.listMine();
-          count = (res.data || []).filter(c => c.status === 'Pending' || c.status === 'In Progress').length;
-        } else {
-          const res = await complaints.listAll();
-          count = (res.data || []).filter(c => c.status === 'Pending' || c.status === 'In Progress').length;
-        }
-        setPendingComplaints(count);
-      } catch (err) {
-        console.error('Failed to fetch pending complaints for dashboard:', err);
-      }
-    };
-    fetchCount();
+    hostelApi.getDashboardStats()
+      .then(res => setStats(res.data?.stats || res.data || {}))
+      .catch(err => console.error('StatCards: failed to load stats', err))
+      .finally(() => setLoading(false));
   }, [user]);
+
+  const displayConfig = STAT_CONFIG.filter(s => !s.adminOnly || isAdmin);
+
   return (
-    <Box 
-      sx={{ 
-        display: 'grid', 
-        gridTemplateColumns: { 
-          xs: '1fr', 
-          sm: '1fr 1fr', 
-          md: 'repeat(2, 1fr)', 
-          lg: isAdmin ? 'repeat(5, 1fr)' : 'repeat(4, 1fr)' 
-        }, 
-        gap: 3, 
-        mb: 4 
+    <Box
+      sx={{
+        display: 'grid',
+        gridTemplateColumns: {
+          xs: '1fr',
+          sm: '1fr 1fr',
+          md: 'repeat(2, 1fr)',
+          lg: isAdmin ? 'repeat(5, 1fr)' : 'repeat(4, 1fr)',
+        },
+        gap: 3,
+        mb: 4,
       }}
     >
-      {displayStats.map((stat, idx) => {
-        const Icon = stat.icon;
-        const displayValue = stat.title === 'Pending Complaints' ? pendingComplaints : stat.value;
+      {displayConfig.map((cfg) => {
+        const Icon = cfg.icon;
+        const value = loading ? null : (stats?.[cfg.key] ?? 0);
+
+        let title = cfg.title;
+        let tooltip = cfg.tooltip;
+        let subtitle = null;
+
+        if (cfg.key === 'pendingComplaints') {
+          if (isAdmin) {
+            tooltip = 'Review all pending complaints (Students & Rector)';
+            subtitle = 'Students & Rector';
+          } else {
+            tooltip = 'Review pending student complaints';
+            subtitle = 'Students only';
+          }
+        }
+
         return (
-          <Card 
-            key={idx}
-            sx={{ 
-              p: 3, 
-              display: 'flex', 
-              flexDirection: 'column',
-              height: '100%',
-              '&:hover': {
-                transform: 'translateY(-4px)',
-                boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)',
-                borderColor: 'rgba(79, 70, 229, 0.2)'
-              }
-            }}
-          >
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 2 }}>
-              <Box 
-                sx={{ 
-                  width: 48, 
-                  height: 48, 
-                  borderRadius: 3, 
-                  backgroundColor: stat.bgColor,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  color: stat.color
-                }}
-              >
-                <Icon size={24} />
+          <Tooltip key={cfg.key} title={tooltip} arrow placement="top">
+            <Card
+              role="button"
+              tabIndex={0}
+              onClick={() => navigate(cfg.path)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  navigate(cfg.path);
+                }
+              }}
+              sx={{
+                p: 3,
+                display: 'flex',
+                flexDirection: 'column',
+                height: '100%',
+                cursor: 'pointer',
+                userSelect: 'none',
+                transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
+                border: '1px solid',
+                borderColor: 'divider',
+                '&:hover': {
+                  transform: 'translateY(-4px)',
+                  boxShadow: '0 12px 20px -4px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05)',
+                  borderColor: cfg.color,
+                  '& .stat-arrow': {
+                    opacity: 1,
+                    transform: 'translate(2px, -2px)',
+                  },
+                },
+                '&:focus-visible': {
+                  outline: `2px solid ${cfg.color}`,
+                  outlineOffset: '2px',
+                },
+              }}
+            >
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 2 }}>
+                <Box
+                  sx={{
+                    width: 48,
+                    height: 48,
+                    borderRadius: 3,
+                    backgroundColor: cfg.bgColor,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: cfg.color,
+                    transition: 'transform 0.2s ease',
+                  }}
+                >
+                  <Icon size={24} />
+                </Box>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <Box
+                    sx={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 0.5,
+                      backgroundColor: cfg.isPositive ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)',
+                      color: cfg.isPositive ? '#16A34A' : '#DC2626',
+                      px: 1,
+                      py: 0.5,
+                      borderRadius: 2,
+                      fontSize: '0.75rem',
+                      fontWeight: 600,
+                    }}
+                  >
+                    {cfg.isPositive ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
+                    Live
+                  </Box>
+                  <Box
+                    className="stat-arrow"
+                    sx={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      color: cfg.color,
+                      opacity: 0.4,
+                      transition: 'all 0.2s ease',
+                    }}
+                  >
+                    <ArrowUpRight size={18} />
+                  </Box>
+                </Box>
               </Box>
-              <Box 
-                sx={{ 
-                  display: 'flex', 
-                  alignItems: 'center', 
-                  gap: 0.5,
-                  backgroundColor: stat.isPositive ? 'rgba(34, 197, 94, 0.1)' : 'rgba(239, 68, 68, 0.1)',
-                  color: stat.isPositive ? '#16A34A' : '#DC2626',
-                  px: 1,
-                  py: 0.5,
-                  borderRadius: 2,
-                  fontSize: '0.75rem',
-                  fontWeight: 600
-                }}
-              >
-                {stat.isPositive ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
-                {stat.trend}
+
+              {loading ? (
+                <Skeleton variant="text" width={80} height={48} />
+              ) : (
+                <Typography variant="h4" sx={{ fontWeight: 700, mb: 0.5, color: 'text.primary' }}>
+                  {value}
+                </Typography>
+              )}
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Typography variant="body2" sx={{ color: 'text.secondary', fontWeight: 500 }}>
+                  {title}
+                </Typography>
+                {subtitle && (
+                  <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '0.7rem', fontWeight: 600 }}>
+                    {subtitle}
+                  </Typography>
+                )}
               </Box>
-            </Box>
-            <Typography variant="h4" sx={{ fontWeight: 700, mb: 0.5, color: 'text.primary' }}>
-              {displayValue}
-            </Typography>
-            <Typography variant="body2" sx={{ color: 'text.secondary', fontWeight: 500 }}>
-              {stat.title}
-            </Typography>
-          </Card>
+            </Card>
+          </Tooltip>
         );
       })}
     </Box>

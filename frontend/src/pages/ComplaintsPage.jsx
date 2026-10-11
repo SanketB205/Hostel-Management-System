@@ -5,7 +5,7 @@ import ComplaintFilters from '../components/complaints/ComplaintFilters';
 import ComplaintTable from '../components/complaints/ComplaintTable';
 import { complaints as complaintsApi } from '../api';
 import { useAuth } from '../contexts/AuthContext';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 
 // ── Normalise API response → shape the existing components expect ─────────────
 function fmtDate(val) {
@@ -62,14 +62,35 @@ export default function ComplaintsPage() {
   const { user } = useAuth();
   const isAdmin = user?.role === 'admin';
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [complaints, setComplaints] = useState([]);
   const [loading, setLoading]       = useState(true);
   const [snackbar, setSnackbar]     = useState({ open: false, message: '', severity: 'error' });
 
+  const getInitialStatus = () => {
+    const s = searchParams.get('status');
+    if (s && ['Pending', 'In Progress', 'Resolved', 'Closed'].includes(s)) {
+      return s;
+    }
+    return 'All';
+  };
+
   const [filters, setFilters] = useState(() => ({
-    search: '', status: 'All', category: 'All', priority: 'All', block: 'All',
+    search: '',
+    status: getInitialStatus(),
+    category: 'All',
+    priority: 'All',
+    block: 'All',
     creatorRole: 'All',
   }));
+
+  // Sync with URL query parameter when navigating with different status
+  useEffect(() => {
+    const s = searchParams.get('status');
+    if (s && ['Pending', 'In Progress', 'Resolved', 'Closed'].includes(s)) {
+      setFilters(prev => ({ ...prev, status: s }));
+    }
+  }, [searchParams]);
 
   // ── Fetch all complaints from backend ──────────────────────────────────────
   const fetchComplaints = useCallback(async () => {
